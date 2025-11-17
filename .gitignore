@@ -12,3 +12,9 @@ wheels/
 # downloaded files
 downloads
 downloads/*
+
+# Logs
+logs/
+logs/*
+meta/
+meta/*

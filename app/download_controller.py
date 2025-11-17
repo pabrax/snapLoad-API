@@ -18,35 +18,51 @@ def _unique_dest(dest: Path) -> Path:
     return candidate
 
 
-def download(url: str, download_dir: str, callback=None, forced_type: str = None):
-    """Wrapper que lanza la descarga en un thread.
-
+def download(url: str, download_dir: str, callback=None, forced_type: str = None, job_id: str = None, logs_dir: str | Path = None):
+    """
+    Wrapper que lanza la descarga en un thread.
     Para uso con la API (BackgroundTasks) se recomienda llamar a `download_sync` directamente.
     """
-    thread = threading.Thread(target=download_sync, args=(url, download_dir, forced_type, callback))
+
+    thread = threading.Thread(target=download_sync, args=(url, download_dir, forced_type, callback, job_id, logs_dir))
     thread.start()
 
 
-def download_sync(url: str, download_dir: str, forced_type: str = None, callback=None):
+def download_sync(url: str, download_dir: str, forced_type: str = None, callback=None, job_id: str = None, logs_dir: str | Path = None):
     """Ejecución síncrona de la descarga (no lanza threads).
 
     Esta función realiza todo el flujo: validación, ejecución de `spotdl`, registro en `job.log`,
     movimiento de archivos y escritura de `meta-<job_id>.json`.
     """
     BASE_DIR = Path(__file__).resolve().parent.parent
-    
+
     download_path = Path(download_dir)
     download_path.mkdir(parents=True, exist_ok=True)
 
-    job_id = uuid.uuid4().hex[:8]
-    tmp_dir = download_path / f"tmp-{job_id}"
+    # Prepare job id and logs directory
+    if not job_id:
+        job_id = uuid.uuid4().hex[:8]
+
+    if logs_dir:
+        logs_base = Path(logs_dir)
+    else:
+        # default logs directory at repo/logs
+        logs_base = Path(__file__).resolve().parent.parent / "logs"
+
+    job_logs_dir = logs_base / job_id
+    job_logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = job_logs_dir / f"job-{job_id}.log"
+
+    # Use a tmp directory separated from downloads and logs: <repo>/tmp/<job_id>/
+    tmp_base = BASE_DIR / "tmp"
+    tmp_dir = tmp_base / job_id
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    # Logs/meta en: <project_root>/logs/<job_id> — nos aseguramos de crear los directorios
-    logs_dir = BASE_DIR / "logs" / job_id
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    log_path = logs_dir / f"job-{job_id}.log"
-    meta_path = logs_dir / f"meta-{job_id}.json"
+    # Store meta centrally under <repo>/meta/meta-<job_id>.json
+    meta_base = BASE_DIR / "meta"
+    meta_base.mkdir(parents=True, exist_ok=True)
+    meta_path = meta_base / f"meta-{job_id}.json"
+
 
     created_at = now_iso()
 
@@ -89,8 +105,9 @@ def download_sync(url: str, download_dir: str, forced_type: str = None, callback
                 stderr=subprocess.STDOUT,
                 text=True,
             )
-            # dump output to log
-            logf.write(process.stdout or "")
+            # dump output to log (full output kept in the job log)
+            raw_output = process.stdout or ""
+            logf.write(raw_output)
 
         finished_at = now_iso()
         status = "success" if process.returncode == 0 else "failed"
@@ -120,7 +137,24 @@ def download_sync(url: str, download_dir: str, forced_type: str = None, callback
         except Exception:
             pass
 
-        # Build meta
+        # Build meta (truncate error to last N lines to avoid huge JSON payloads)
+        raw_spotdl_summary = None
+        if raw_output:
+            # try to extract a short summary like 'Downloaded X tracks'
+            import re
+
+            m = re.search(r"Downloaded\s+\d+\s+tracks", raw_output)
+            if m:
+                raw_spotdl_summary = m.group(0)
+
+        def _truncate_output(text: str, max_lines: int = 200) -> str:
+            if not text:
+                return ""
+            lines = text.strip().splitlines()
+            if len(lines) <= max_lines:
+                return "\n".join(lines)
+            return "\n".join(lines[-max_lines:])
+
         meta = {
             "job_id": job_id,
             "url": url,
@@ -134,9 +168,9 @@ def download_sync(url: str, download_dir: str, forced_type: str = None, callback
             "status": status,
             "files": moved_files,
             "log_path": str(log_path),
-            "error": None if status == "success" else (process.stdout or "spotdl error"),
+            "error": None if status == "success" else _truncate_output(raw_output, max_lines=200),
             "inferred_from_filenames": False,
-            "raw_spotdl_summary": None,
+            "raw_spotdl_summary": raw_spotdl_summary,
         }
 
         with open(meta_path, "w", encoding="utf-8") as mf:
