@@ -1,0 +1,23 @@
+{
+  "job_id": "1d1ca9df",
+  "url": "https://open.spotify.com/intl-es/track/3J0SkqYQdqWG5iQjhnFTJh",
+  "type": "unknown",
+  "source_id": null,
+  "artist": null,
+  "album": null,
+  "created_at": "2025-11-17T05:13:05Z",
+  "started_at": "2025-11-17T05:13:05Z",
+  "finished_at": "2025-11-17T05:13:39Z",
+  "status": "success",
+  "files": [
+    {
+      "name": "Saramalacara - TOMBOY.mp3",
+      "path": "/home/pablo/desarrollos/downloads/Saramalacara - TOMBOY.mp3",
+      "size_bytes": 2543102
+    }
+  ],
+  "log_path": "/home/pablo/desarrollos/logs/1d1ca9df/job-1d1ca9df.log",
+  "error": null,
+  "inferred_from_filenames": false,
+  "raw_spotdl_summary": null
+}

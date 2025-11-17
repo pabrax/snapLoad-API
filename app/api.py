@@ -1,11 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi import HTTPException
 from pydantic import BaseModel
+from typing import Optional
 from pathlib import Path
-from .utils import notify
 
-from .download_controller import download
+from .download_controller import download_sync
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent  # raíz del proyecto
@@ -13,6 +13,7 @@ DOWNLOAD_DIR = BASE_DIR / "downloads"
 
 class DownloadRequest(BaseModel):
     url: str
+    type: Optional[str] = None
 
 app = FastAPI(
     title="SDAPI",
@@ -21,20 +22,16 @@ app = FastAPI(
 )
 
 @app.post("/download")
-def download_endpoint(payload: DownloadRequest):
+def download_endpoint(payload: DownloadRequest, background_tasks: BackgroundTasks):
     try:
-        # Llamamos a la función download pasando la URL recibida y el directorio definido
-        download(
-            url=payload.url, 
-            download_dir=DOWNLOAD_DIR,
-            callback=notify
-        )
+        # Encolar la tarea en el background task de FastAPI (usa threadpool internamente)
+        background_tasks.add_task(download_sync, payload.url, DOWNLOAD_DIR, payload.type)
 
         return JSONResponse(content={
             "message": "Descarga iniciada",
             "url": payload.url
         })
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
