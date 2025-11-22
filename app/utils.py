@@ -37,8 +37,19 @@ def is_spotify_url(url: str) -> bool:
     """Comprueba de forma básica si la URL/URI es de Spotify."""
     if not url or not isinstance(url, str):
         return False
-    url = url.strip()
-    return url.startswith("https://open.spotify.com/") or url.startswith("spotify:")
+    s = url.strip()
+
+    # spotify:track:<id> or spotify:album:<id> or spotify:playlist:<id>
+    m = re.match(r"^spotify:(track|album|playlist):([A-Za-z0-9]{22})$", s)
+    if m:
+        return True
+
+    # URLs like https://open.spotify.com/intl-es/track/<id>?si=... or https://open.spotify.com/track/<id>
+    m = re.match(r"^https?://open\.spotify\.com/(?:[A-Za-z\-]+/)?(track|album|playlist)/([A-Za-z0-9]{22})(?:[/?#].*)?$", s)
+    if m:
+        return True
+
+    return False
 
 
 def list_audio_files(folder: Path):
@@ -50,3 +61,19 @@ def list_audio_files(folder: Path):
         if p.is_file() and p.suffix.lower() in AUDIO_EXTS:
             files.append(p)
     return files
+
+
+def is_youtube_url(url: str) -> bool:
+    """Comprueba de forma básica si la URL corresponde a YouTube (incluye youtu.be, youtube.com, music.youtube.com)."""
+    if not url or not isinstance(url, str):
+        return False
+    s = url.strip()
+    return (
+        s.startswith("https://www.youtube.com/")
+        or s.startswith("https://youtube.com/")
+        or s.startswith("https://youtu.be/")
+        or s.startswith("https://music.youtube.com/")
+        or s.startswith("http://www.youtube.com/")
+        or s.startswith("http://youtube.com/")
+        or s.startswith("http://youtu.be/")
+    )

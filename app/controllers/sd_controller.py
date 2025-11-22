@@ -5,8 +5,7 @@ import json
 import shutil
 from pathlib import Path
 
-from .utils import sanitize_filename, list_audio_files, now_iso, is_spotify_url
-
+from ..utils import sanitize_filename, list_audio_files, now_iso, is_spotify_url
 
 def _unique_dest(dest: Path) -> Path:
     """Return a non-colliding path by appending a counter if needed."""
@@ -34,9 +33,14 @@ def download_sync(url: str, download_dir: str, forced_type: str = None, callback
     Esta función realiza todo el flujo: validación, ejecución de `spotdl`, registro en `job.log`,
     movimiento de archivos y escritura de `meta-<job_id>.json`.
     """
-    BASE_DIR = Path(__file__).resolve().parent.parent
+    # Root of the project (two levels up from controllers -> app -> project)
+    BASE_DIR = Path(__file__).resolve().parents[2]
 
     download_path = Path(download_dir)
+    download_path.mkdir(parents=True, exist_ok=True)
+
+    # store spotify downloads under downloads/audio for consistency with YouTube
+    download_path = Path(download_dir) / "audio"
     download_path.mkdir(parents=True, exist_ok=True)
 
     # Prepare job id and logs directory
@@ -46,15 +50,16 @@ def download_sync(url: str, download_dir: str, forced_type: str = None, callback
     if logs_dir:
         logs_base = Path(logs_dir)
     else:
-        # default logs directory at repo/logs
-        logs_base = Path(__file__).resolve().parent.parent / "logs"
+        # default logs directory at repo/logs/spotify
+        logs_base = BASE_DIR / "logs" / "spotify"
 
     job_logs_dir = logs_base / job_id
     job_logs_dir.mkdir(parents=True, exist_ok=True)
     log_path = job_logs_dir / f"job-{job_id}.log"
 
     # Use a tmp directory separated from downloads and logs: <repo>/tmp/<job_id>/
-    tmp_base = BASE_DIR / "tmp"
+    # tmp separated by origin/type: tmp/spotify/audio/<job_id>
+    tmp_base = BASE_DIR / "tmp" / "spotify" / "audio"
     tmp_dir = tmp_base / job_id
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
@@ -126,6 +131,23 @@ def download_sync(url: str, download_dir: str, forced_type: str = None, callback
                 "path": str(dest),
                 "size_bytes": dest.stat().st_size,
             })
+
+        # If spotdl returned success but no files were produced, mark as failed
+        # and try to extract a relevant error line from the output.
+        if status == "success" and len(moved_files) == 0:
+            status = "failed"
+            if raw_output:
+                lines = [l for l in raw_output.splitlines() if l.strip()]
+                extracted = None
+                for line in reversed(lines[-200:]):
+                    if "Error" in line or "AudioProviderError" in line or "Traceback" in line:
+                        extracted = line
+                        break
+                if not extracted and lines:
+                    extracted = lines[-1]
+            else:
+                extracted = "No files produced by spotdl (no output)"
+
 
         # Cleanup tmp directory (remove empty dirs)
         try:

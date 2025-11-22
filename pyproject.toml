@@ -8,4 +8,5 @@ dependencies = [
     "fastapi>=0.103.2",
     "spotdl>=4.4.3",
     "uvicorn>=0.23.2",
+    "yt-dlp>=2025.11.12",
 ]

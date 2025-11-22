@@ -5,8 +5,10 @@ from pydantic import BaseModel
 from typing import Optional
 from pathlib import Path
 
-from .download_controller import download_sync
+from .controllers.sd_controller import download_sync
 from .utils import is_spotify_url
+from .controllers.yt_controller import download_audio_sync, download_video_sync
+from .utils import is_youtube_url
 import uuid
 import json
 
@@ -27,21 +29,90 @@ app = FastAPI(
 @app.post("/download")
 def download_endpoint(payload: DownloadRequest, background_tasks: BackgroundTasks):
     try:
-        # Validate URL early and return 400 if invalid
-        if not is_spotify_url(payload.url):
-            raise HTTPException(status_code=400, detail="URL inválida: solo se aceptan enlaces/URIs de Spotify")
+        # Decide source by inspecting the URL (no `type` field used)
+        url = payload.url
+        if not url or not isinstance(url, str):
+            raise HTTPException(status_code=400, detail="URL inválida")
 
-        # generate job id and prepare logs path
         job_id = uuid.uuid4().hex[:8]
-        logs_dir = BASE_DIR / "logs"
-        # create base logs directory and the per-job folder so background task can write into it
+
+        # Spotify path
+        if is_spotify_url(url):
+            logs_dir = BASE_DIR / "logs" / "spotify"
+            (logs_dir).mkdir(parents=True, exist_ok=True)
+            (logs_dir / job_id).mkdir(parents=True, exist_ok=True)
+
+            # Encolar spotdl sync (forced_type not used)
+            background_tasks.add_task(
+                download_sync,
+                url,
+                DOWNLOAD_DIR,
+                None,
+                job_id=job_id,
+                logs_dir=logs_dir,
+            )
+
+            return JSONResponse(status_code=202, content={
+                "message": "Descarga encolada",
+                "job_id": job_id,
+                "url": url,
+                "source": "spotify",
+            })
+
+        # YouTube audio path
+        if is_youtube_url(url):
+            logs_dir = BASE_DIR / "logs" / "yt"
+            (logs_dir).mkdir(parents=True, exist_ok=True)
+            (logs_dir / job_id).mkdir(parents=True, exist_ok=True)
+
+            background_tasks.add_task(
+                download_audio_sync,
+                url,
+                DOWNLOAD_DIR,
+                None,
+                job_id=job_id,
+                logs_dir=logs_dir,
+            )
+
+            return JSONResponse(status_code=202, content={
+                "message": "Descarga encolada",
+                "job_id": job_id,
+                "url": url,
+                "source": "youtube_audio",
+            })
+
+        raise HTTPException(status_code=400, detail="URL inválida: solo se aceptan enlaces/URIs de Spotify o YouTube")
+
+    except HTTPException as he:
+        raise he
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class VideoDownloadRequest(BaseModel):
+    url: str
+    type: Optional[str] = None
+
+
+# Note: YouTube-audio is now handled by the unified `/download` endpoint above.
+
+
+@app.post("/download/video")
+def download_video(payload: VideoDownloadRequest, background_tasks: BackgroundTasks):
+    # Validate URL before entering try/except so HTTPException isn't accidentally caught
+    if not is_youtube_url(payload.url):
+        raise HTTPException(status_code=400, detail="URL inválida: solo se aceptan enlaces de YouTube")
+
+    try:
+        job_id = uuid.uuid4().hex[:8]
+        logs_dir = BASE_DIR / "logs" / "yt"
         (logs_dir).mkdir(parents=True, exist_ok=True)
         (logs_dir / job_id).mkdir(parents=True, exist_ok=True)
 
-        # Encolar la tarea en el background task de FastAPI (usa threadpool internamente)
-        # Pasamos `job_id` y `logs_dir` como kwargs para evitar desajustes posicionales
         background_tasks.add_task(
-            download_sync,
+            download_video_sync,
             payload.url,
             DOWNLOAD_DIR,
             payload.type,
@@ -49,12 +120,9 @@ def download_endpoint(payload: DownloadRequest, background_tasks: BackgroundTask
             logs_dir=logs_dir,
         )
 
-        return JSONResponse(status_code=202, content={
-            "message": "Descarga encolada",
-            "job_id": job_id,
-            "url": payload.url
-        })
-
+        return JSONResponse(status_code=202, content={"message": "Descarga encolada", "job_id": job_id, "url": payload.url})
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -101,17 +169,21 @@ def get_status(job_id: str):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    # Fallback heuristics
-    logs_dir = BASE_DIR / "logs" / job_id
-    log_path = logs_dir / f"job-{job_id}.log"
+    # Fallback heuristics: search in spotify and yt specific logs, then generic logs/
+    candidates = [
+        BASE_DIR / "logs" / "spotify" / job_id,
+        BASE_DIR / "logs" / "yt" / job_id,
+        BASE_DIR / "logs" / job_id,
+    ]
 
-    if log_path.exists():
-        # presence of the log file indicates the job has started (or is running)
-        return JSONResponse(content={"job_id": job_id, "status": "running", "log_path": str(log_path)})
+    for d in candidates:
+        log_path = d / f"job-{job_id}.log"
+        if log_path.exists():
+            return JSONResponse(content={"job_id": job_id, "status": "running", "log_path": str(log_path)})
 
-    if logs_dir.exists():
-        # logs dir created at enqueue time -> queued
-        return JSONResponse(content={"job_id": job_id, "status": "queued"})
+    for d in candidates:
+        if d.exists():
+            return JSONResponse(content={"job_id": job_id, "status": "queued"})
 
     raise HTTPException(status_code=404, detail="job no encontrado")
 
