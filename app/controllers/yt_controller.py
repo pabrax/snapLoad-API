@@ -1,13 +1,11 @@
 import subprocess
 import os
-import signal
 import uuid
 import json
 import shutil
 from pathlib import Path
-from datetime import datetime
 
-from ..utils import sanitize_filename, list_audio_files, now_iso, is_youtube_url
+from ..utils import sanitize_filename, now_iso, is_youtube_url
 from ..job_registry import register_job, unregister_job
 
 
@@ -19,7 +17,6 @@ def _unique_dest(dest: Path) -> Path:
         candidate = dest.with_name(f"{dest.stem}-{i}{dest.suffix}")
         i += 1
     return candidate
-
 
 def _list_media_files(folder: Path, kinds: str = "audio"):
     """List files produced by yt-dlp in `folder`.
@@ -39,7 +36,6 @@ def _list_media_files(folder: Path, kinds: str = "audio"):
             files.append(p)
     return files
 
-
 def _truncate_output(text: str, max_lines: int = 200) -> str:
     if not text:
         return ""
@@ -47,7 +43,6 @@ def _truncate_output(text: str, max_lines: int = 200) -> str:
     if len(lines) <= max_lines:
         return "\n".join(lines)
     return "\n".join(lines[-max_lines:])
-
 
 def download_audio_sync(url: str, download_dir: str, callback=None, job_id: str = None, logs_dir: str | Path = None, quality: str = None):
     """Síncrono: descarga audio con `yt-dlp -x --audio-format mp3` y sigue la convención de `sd_controller`.
@@ -261,6 +256,7 @@ def download_audio_sync(url: str, download_dir: str, callback=None, job_id: str 
         print(f"JOB {job_id} STATUS failed exception={e}")
         if callback:
             callback(None, None)
+
 def download_audio(url: str, download_dir: str, callback=None, job_id: str = None, logs_dir: str | Path = None, quality: str = None):
     """Wrapper que lanza `download_audio_sync` en un thread daemon y retorna inmediatamente."""
     import threading

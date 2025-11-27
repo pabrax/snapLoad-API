@@ -5,11 +5,11 @@ from datetime import datetime
 
 # Common audio extensions
 AUDIO_EXTS = {".mp3", ".m4a", ".flac", ".wav", ".aac", ".ogg"}
-
+BASE_DIR = Path(__file__).resolve().parent.parent  # raíz del proyecto
+DOWNLOAD_DIR = BASE_DIR / "downloads"
 
 def now_iso():
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-
 
 def sanitize_filename(name: str, max_length: int = 150) -> str:
     """Sanitiza un nombre de fichero o carpeta para evitar caracteres inválidos.

@@ -1,6 +1,5 @@
 import subprocess
 import os
-import signal
 import threading
 import uuid
 import json
@@ -19,7 +18,6 @@ def _unique_dest(dest: Path) -> Path:
         i += 1
     return candidate
 
-
 def download(url: str, download_dir: str, callback=None, job_id: str = None, logs_dir: str | Path = None):
     """
     Wrapper que lanza la descarga en un thread.
@@ -29,7 +27,6 @@ def download(url: str, download_dir: str, callback=None, job_id: str = None, log
     thread = threading.Thread(target=download_sync, args=(url, download_dir, callback, job_id, logs_dir))
     thread.daemon = True
     thread.start()
-
 
 def download_sync(url: str, download_dir: str, callback=None, job_id: str = None, logs_dir: str | Path = None, quality: str = None):
     """Ejecución síncrona de la descarga (no lanza threads).
