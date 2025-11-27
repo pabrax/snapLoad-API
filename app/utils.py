@@ -77,3 +77,73 @@ def is_youtube_url(url: str) -> bool:
         or s.startswith("http://youtube.com/")
         or s.startswith("http://youtu.be/")
     )
+
+
+def is_valid_bitrate(value: str) -> bool:
+    """Valida un valor de bitrate/quality aceptable.
+
+    Acepta:
+    - "0" (indica best/equivalente en yt-dlp)
+    - números con sufijo k o K (ej. "320k", "128K")
+    - números sin sufijo (ej. "320")
+    """
+    if value is None:
+        return False
+    if not isinstance(value, str):
+        return False
+    v = value.strip().lower()
+    # allow '0', 'bestaudio', or digits optionally followed by 'k'/'K'
+    import re
+
+    return bool(re.match(r"^(0|bestaudio|\d+[kK]?)$", v))
+
+
+def is_valid_video_format(fmt: str) -> bool:
+    """Valida formato de contenedor de video aceptable (webm/mp4/mkv/mov/avi)."""
+    if not fmt or not isinstance(fmt, str):
+        return False
+    allowed = {"webm", "mp4", "mkv", "mov", "avi"}
+    return fmt.lower() in allowed
+
+
+def normalize_quality(value: str) -> dict:
+    """Normaliza un valor de `quality` y devuelve variantes para spotdl y yt-dlp.
+
+    Retorna un dict con claves:
+      - 'spotdl': valor para pasar a `spotdl --bitrate` (ej. '320k') o None para no pasar
+      - 'ytdlp': valor para pasar a `yt-dlp --audio-quality` (ej. '0' o '128K')
+
+    Reglas simples:
+      - None/empty -> {'spotdl': None, 'ytdlp': '0'}
+      - '0' -> {'spotdl': None, 'ytdlp': '0'}
+      - 'bestaudio' -> {'spotdl': None, 'ytdlp': 'bestaudio'}
+      - numeric like '320' -> spotdl '320k', ytdlp '320K'
+      - with suffix 'k'/'K' -> spotdl lowercased '320k', ytdlp uppercased '320K'
+    """
+    if value is None:
+        return {"spotdl": None, "ytdlp": "0"}
+    if not isinstance(value, str):
+        return {"spotdl": None, "ytdlp": "0"}
+
+    v = value.strip()
+    if v == "":
+        return {"spotdl": None, "ytdlp": "0"}
+
+    lv = v.lower()
+    # special cases
+    if lv == "0":
+        return {"spotdl": None, "ytdlp": "0"}
+    if lv == "bestaudio":
+        return {"spotdl": None, "ytdlp": "bestaudio"}
+
+    import re
+    m = re.match(r"^(\d+)([kK]?)$", v)
+    if m:
+        num = m.group(1)
+        suffix = m.group(2)
+        spot = f"{num}k"  # spotdl prefers lowercase 'k'
+        ytd = f"{num}K"  # yt-dlp conventional capital 'K' for quality
+        return {"spotdl": spot, "ytdlp": ytd}
+
+    # fallback: return for yt-dlp as given (lowercased) and no spotdl bitrate
+    return {"spotdl": None, "ytdlp": lv}

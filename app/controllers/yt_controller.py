@@ -1,4 +1,6 @@
 import subprocess
+import os
+import signal
 import uuid
 import json
 import shutil
@@ -6,6 +8,7 @@ from pathlib import Path
 from datetime import datetime
 
 from ..utils import sanitize_filename, list_audio_files, now_iso, is_youtube_url
+from ..job_registry import register_job, unregister_job
 
 
 def _unique_dest(dest: Path) -> Path:
@@ -46,7 +49,7 @@ def _truncate_output(text: str, max_lines: int = 200) -> str:
     return "\n".join(lines[-max_lines:])
 
 
-def download_audio_sync(url: str, download_dir: str, forced_type: str = None, callback=None, job_id: str = None, logs_dir: str | Path = None):
+def download_audio_sync(url: str, download_dir: str, callback=None, job_id: str = None, logs_dir: str | Path = None, quality: str = None):
     """Síncrono: descarga audio con `yt-dlp -x --audio-format mp3` y sigue la convención de `sd_controller`.
 
     Nota: usa el binario `yt-dlp` — asegúrate que esté en `PATH`.
@@ -86,7 +89,7 @@ def download_audio_sync(url: str, download_dir: str, forced_type: str = None, ca
         meta = {
             "job_id": job_id,
             "url": url,
-            "type": forced_type or "audio",
+            "type": "audio",
             "source_id": None,
             "artist": None,
             "album": None,
@@ -112,24 +115,47 @@ def download_audio_sync(url: str, download_dir: str, forced_type: str = None, ca
         with open(log_path, "w", encoding="utf-8") as logf:
             logf.write(f"[{started_at}] JOB {job_id} START url={url}\n")
             output_template = str(tmp_dir / "%(title)s.%(ext)s")
-            process = subprocess.run(
-                [
-                    "yt-dlp",
-                    "-x",
-                    "--audio-format",
-                    "mp3",
-                    "--audio-quality",
-                    "0",
-                    "-o",
-                    output_template,
-                    url,
-                ],
+            # build yt-dlp command with optional quality
+            audio_quality = str(quality) if quality is not None else "0"
+            cmd = [
+                "yt-dlp",
+                "-x",
+                "--audio-format",
+                "mp3",
+                "--audio-quality",
+                audio_quality,
+                "-o",
+                output_template,
+                url,
+            ]
+
+            # start process and register
+            process = subprocess.Popen(
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                preexec_fn=os.setsid,
             )
-            raw_output = process.stdout or ""
-            logf.write(raw_output)
+            register_job(job_id, process)
+
+            # stream stdout to log file
+            raw_lines = []
+            try:
+                if process.stdout:
+                    for line in process.stdout:
+                        raw_lines.append(line)
+                        logf.write(line)
+            except Exception:
+                pass
+            # wait for completion
+            try:
+                process.wait()
+            finally:
+                # ensure unregistered
+                unregister_job(job_id)
+
+            raw_output = "".join(raw_lines)
 
         finished_at = now_iso()
         status = "success" if process.returncode == 0 else "failed"
@@ -185,7 +211,7 @@ def download_audio_sync(url: str, download_dir: str, forced_type: str = None, ca
         meta = {
             "job_id": job_id,
             "url": url,
-            "type": forced_type or "audio",
+            "type": "audio",
             "source_id": None,
             "artist": None,
             "album": None,
@@ -216,7 +242,7 @@ def download_audio_sync(url: str, download_dir: str, forced_type: str = None, ca
         meta = {
             "job_id": job_id,
             "url": url,
-            "type": forced_type or "audio",
+            "type": "audio",
             "source_id": None,
             "artist": None,
             "album": None,
@@ -235,9 +261,16 @@ def download_audio_sync(url: str, download_dir: str, forced_type: str = None, ca
         print(f"JOB {job_id} STATUS failed exception={e}")
         if callback:
             callback(None, None)
+def download_audio(url: str, download_dir: str, callback=None, job_id: str = None, logs_dir: str | Path = None, quality: str = None):
+    """Wrapper que lanza `download_audio_sync` en un thread daemon y retorna inmediatamente."""
+    import threading
+
+    thread = threading.Thread(target=download_audio_sync, args=(url, download_dir, callback, job_id, logs_dir, quality))
+    thread.daemon = True
+    thread.start()
 
 
-def download_video_sync(url: str, download_dir: str, forced_type: str = None, callback=None, job_id: str = None, logs_dir: str | Path = None):
+def download_video_sync(url: str, download_dir: str, merge_format: str = None, callback=None, job_id: str = None, logs_dir: str | Path = None):
     """Síncrono: descarga video con `yt-dlp` y produce `webm` como formato de salida preferente.
     Sigue la convención de `sd_controller` para logs/meta/tmp.
     """
@@ -275,7 +308,7 @@ def download_video_sync(url: str, download_dir: str, forced_type: str = None, ca
         meta = {
             "job_id": job_id,
             "url": url,
-            "type": forced_type or "video",
+            "type": "video",
             "source_id": None,
             "artist": None,
             "album": None,
@@ -301,23 +334,42 @@ def download_video_sync(url: str, download_dir: str, forced_type: str = None, ca
         with open(log_path, "w", encoding="utf-8") as logf:
             logf.write(f"[{started_at}] JOB {job_id} START url={url}\n")
             output_template = str(tmp_dir / "%(title)s.%(ext)s")
-            process = subprocess.run(
-                [
-                    "yt-dlp",
-                    "-f",
-                    "bestvideo+bestaudio/best",
-                    "--merge-output-format",
-                    "webm",
-                    "-o",
-                    output_template,
-                    url,
-                ],
+            # respect requested merge format (default webm)
+            merge_fmt = merge_format or "webm"
+            cmd = [
+                "yt-dlp",
+                "-f",
+                "bestvideo+bestaudio/best",
+                "--merge-output-format",
+                merge_fmt,
+                "-o",
+                output_template,
+                url,
+            ]
+
+            process = subprocess.Popen(
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                preexec_fn=os.setsid,
             )
-            raw_output = process.stdout or ""
-            logf.write(raw_output)
+            register_job(job_id, process)
+
+            raw_lines = []
+            try:
+                if process.stdout:
+                    for line in process.stdout:
+                        raw_lines.append(line)
+                        logf.write(line)
+            except Exception:
+                pass
+            try:
+                process.wait()
+            finally:
+                unregister_job(job_id)
+
+            raw_output = "".join(raw_lines)
 
         finished_at = now_iso()
         status = "success" if process.returncode == 0 else "failed"
@@ -357,7 +409,7 @@ def download_video_sync(url: str, download_dir: str, forced_type: str = None, ca
         meta = {
             "job_id": job_id,
             "url": url,
-            "type": forced_type or "video",
+            "type": "audio",
             "source_id": None,
             "artist": None,
             "album": None,
@@ -383,12 +435,13 @@ def download_video_sync(url: str, download_dir: str, forced_type: str = None, ca
             else:
                 callback(None, None)
 
+
     except Exception as e:
         finished_at = now_iso()
         meta = {
             "job_id": job_id,
             "url": url,
-            "type": forced_type or "video",
+            "type": "audio",
             "source_id": None,
             "artist": None,
             "album": None,
@@ -407,3 +460,12 @@ def download_video_sync(url: str, download_dir: str, forced_type: str = None, ca
         print(f"JOB {job_id} STATUS failed exception={e}")
         if callback:
             callback(None, None)
+
+
+def download_video(url: str, download_dir: str, merge_format: str = None, callback=None, job_id: str = None, logs_dir: str | Path = None):
+    """Wrapper que lanza `download_video_sync` en un thread daemon y retorna inmediatamente."""
+    import threading
+
+    thread = threading.Thread(target=download_video_sync, args=(url, download_dir, merge_format, callback, job_id, logs_dir))
+    thread.daemon = True
+    thread.start()

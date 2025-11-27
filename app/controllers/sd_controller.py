@@ -1,4 +1,6 @@
 import subprocess
+import os
+import signal
 import threading
 import uuid
 import json
@@ -6,6 +8,7 @@ import shutil
 from pathlib import Path
 
 from ..utils import sanitize_filename, list_audio_files, now_iso, is_spotify_url
+from ..job_registry import register_job, unregister_job
 
 def _unique_dest(dest: Path) -> Path:
     """Return a non-colliding path by appending a counter if needed."""
@@ -17,17 +20,18 @@ def _unique_dest(dest: Path) -> Path:
     return candidate
 
 
-def download(url: str, download_dir: str, callback=None, forced_type: str = None, job_id: str = None, logs_dir: str | Path = None):
+def download(url: str, download_dir: str, callback=None, job_id: str = None, logs_dir: str | Path = None):
     """
     Wrapper que lanza la descarga en un thread.
     Para uso con la API (BackgroundTasks) se recomienda llamar a `download_sync` directamente.
     """
 
-    thread = threading.Thread(target=download_sync, args=(url, download_dir, forced_type, callback, job_id, logs_dir))
+    thread = threading.Thread(target=download_sync, args=(url, download_dir, callback, job_id, logs_dir))
+    thread.daemon = True
     thread.start()
 
 
-def download_sync(url: str, download_dir: str, forced_type: str = None, callback=None, job_id: str = None, logs_dir: str | Path = None):
+def download_sync(url: str, download_dir: str, callback=None, job_id: str = None, logs_dir: str | Path = None, quality: str = None):
     """Ejecución síncrona de la descarga (no lanza threads).
 
     Esta función realiza todo el flujo: validación, ejecución de `spotdl`, registro en `job.log`,
@@ -78,7 +82,7 @@ def download_sync(url: str, download_dir: str, forced_type: str = None, callback
         meta = {
             "job_id": job_id,
             "url": url,
-            "type": forced_type or "unknown",
+            "type": "audio",
             "source_id": None,
             "artist": None,
             "album": None,
@@ -104,15 +108,35 @@ def download_sync(url: str, download_dir: str, forced_type: str = None, callback
         with open(log_path, "w", encoding="utf-8") as logf:
             logf.write(f"[{started_at}] JOB {job_id} START url={url}\n")
             # Run spotdl writing stdout+stderr to capture everything
-            process = subprocess.run(
-                ["spotdl", url, "--output", str(tmp_dir)],
+            cmd = ["spotdl", url, "--output", str(tmp_dir)]
+            # If a bitrate/quality is provided, pass it to spotdl
+            if quality:
+                cmd.extend(["--bitrate", str(quality)])
+
+            process = subprocess.Popen(
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                preexec_fn=os.setsid,
             )
+            register_job(job_id, process)
+
+            raw_lines = []
+            try:
+                if process.stdout:
+                    for line in process.stdout:
+                        raw_lines.append(line)
+                        logf.write(line)
+            except Exception:
+                pass
+            try:
+                process.wait()
+            finally:
+                unregister_job(job_id)
+
             # dump output to log (full output kept in the job log)
-            raw_output = process.stdout or ""
-            logf.write(raw_output)
+            raw_output = "".join(raw_lines)
 
         finished_at = now_iso()
         status = "success" if process.returncode == 0 else "failed"
@@ -180,7 +204,7 @@ def download_sync(url: str, download_dir: str, forced_type: str = None, callback
         meta = {
             "job_id": job_id,
             "url": url,
-            "type": forced_type or "unknown",
+            "type": "audio",
             "source_id": None,
             "artist": None,
             "album": None,
@@ -212,7 +236,7 @@ def download_sync(url: str, download_dir: str, forced_type: str = None, callback
         meta = {
             "job_id": job_id,
             "url": url,
-            "type": forced_type or "unknown",
+            "type": "audio",
             "source_id": None,
             "artist": None,
             "album": None,
