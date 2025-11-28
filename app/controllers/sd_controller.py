@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ..utils import sanitize_filename, list_audio_files, now_iso, is_spotify_url
 from ..job_registry import register_job, unregister_job
+from ..storage.index import download_index
 
 def _unique_dest(dest: Path) -> Path:
     """Return a non-colliding path by appending a counter if needed."""
@@ -223,6 +224,11 @@ def download_sync(url: str, download_dir: str, callback=None, job_id: str = None
         # Console notification simulating webhook
         print(f"JOB {job_id} STATUS {status} FILES {len(moved_files)} PATH {download_path}")
 
+        if status == "success":
+            download_index.register_success(job_id, [f["path"] for f in moved_files])
+        else:
+            download_index.register_failed(job_id, meta.get("error") or "spotdl failed")
+
         if callback:
             if status == "success":
                 callback([f["name"] for f in moved_files], [f["path"] for f in moved_files])
@@ -251,5 +257,6 @@ def download_sync(url: str, download_dir: str, callback=None, job_id: str = None
         with open(meta_path, "w", encoding="utf-8") as mf:
             json.dump(meta, mf, indent=2, ensure_ascii=False)
         print(f"JOB {job_id} STATUS failed exception={e}")
+        download_index.register_failed(job_id, str(e))
         if callback:
             callback(None, None)

@@ -8,6 +8,7 @@ from app.utils import is_spotify_url, is_youtube_url, is_valid_bitrate, normaliz
 from app.controllers.sd_controller import download
 from app.controllers.yt_controller import download_audio, download_video as yt_download_video
 from app.utils import DOWNLOAD_DIR, BASE_DIR
+from app.storage.index import download_index
 
 
 
@@ -21,8 +22,6 @@ def download_endpoint(payload: DownloadRequest, background_tasks: BackgroundTask
         if not url or not isinstance(url, str):
             raise HTTPException(status_code=400, detail="URL inválida")
 
-        job_id = uuid.uuid4().hex[:8]
-
         # Validate and normalize quality if provided
         normalized = None
         if payload.quality is not None:
@@ -32,18 +31,33 @@ def download_endpoint(payload: DownloadRequest, background_tasks: BackgroundTask
 
         # Spotify path
         if is_spotify_url(url):
+            # lookup cache (type audio, quality spotdl variant)
+            spot_quality = (normalized["spotdl"] if normalized else None)
+            cached = download_index.lookup(url, "audio", quality=spot_quality, format_=None)
+            if cached and cached.get("status") == "ready":
+                download_index.touch(url, "audio", spot_quality, None, now_iso())
+                return JSONResponse(status_code=200, content={
+                    "message": "Reusado desde cache",
+                    "job_id": cached.get("job_id"),
+                    "url": url,
+                    "source": "spotify",
+                    "files": cached.get("files", []),
+                })
+
+            job_id = uuid.uuid4().hex[:8]
             logs_dir = BASE_DIR / "logs" / "spotify"
             (logs_dir).mkdir(parents=True, exist_ok=True)
             (logs_dir / job_id).mkdir(parents=True, exist_ok=True)
 
             # Encolar spotdl (wrapper que lanza hilo daemon)
+            download_index.register_pending(url, "audio", spot_quality, None, job_id, now_iso())
             background_tasks.add_task(
                 download,
                 url,
                 DOWNLOAD_DIR,
                 job_id=job_id,
                 logs_dir=logs_dir,
-                quality=(normalized["spotdl"] if normalized else None),
+                quality=spot_quality,
             )
 
             return JSONResponse(status_code=202, content={
@@ -55,17 +69,31 @@ def download_endpoint(payload: DownloadRequest, background_tasks: BackgroundTask
 
         # YouTube audio path
         if is_youtube_url(url):
+            yt_quality = (normalized["ytdlp"] if normalized else None)
+            cached = download_index.lookup(url, "audio", quality=yt_quality, format_=None)
+            if cached and cached.get("status") == "ready":
+                download_index.touch(url, "audio", yt_quality, None, now_iso())
+                return JSONResponse(status_code=200, content={
+                    "message": "Reusado desde cache",
+                    "job_id": cached.get("job_id"),
+                    "url": url,
+                    "source": "youtube_audio",
+                    "files": cached.get("files", []),
+                })
+
+            job_id = uuid.uuid4().hex[:8]
             logs_dir = BASE_DIR / "logs" / "yt"
             (logs_dir).mkdir(parents=True, exist_ok=True)
             (logs_dir / job_id).mkdir(parents=True, exist_ok=True)
 
+            download_index.register_pending(url, "audio", yt_quality, None, job_id, now_iso())
             background_tasks.add_task(
                 download_audio,
                 url,
                 DOWNLOAD_DIR,
                 job_id=job_id,
                 logs_dir=logs_dir,
-                quality=(normalized["ytdlp"] if normalized else None),
+                quality=yt_quality,
             )
 
             return JSONResponse(status_code=202, content={
@@ -92,14 +120,27 @@ def download_video(payload: VideoDownloadRequest, background_tasks: BackgroundTa
         raise HTTPException(status_code=400, detail="URL inválida: solo se aceptan enlaces de YouTube")
 
     try:
-        job_id = uuid.uuid4().hex[:8]
         # Validate requested video format
         if payload.format is not None and not is_valid_video_format(payload.format):
             raise HTTPException(status_code=400, detail=f"format inválido: {payload.format}. formatos aceptados: webm, mp4, mkv, mov, avi")
+        cached = download_index.lookup(payload.url, "video", quality=None, format_=payload.format)
+        if cached and cached.get("status") == "ready":
+            download_index.touch(payload.url, "video", None, payload.format, now_iso())
+            return JSONResponse(status_code=200, content={
+                "message": "Reusado desde cache",
+                "job_id": cached.get("job_id"),
+                "url": payload.url,
+                "source": "youtube_video",
+                "files": cached.get("files", []),
+                "format": payload.format,
+            })
+
+        job_id = uuid.uuid4().hex[:8]
         logs_dir = BASE_DIR / "logs" / "yt"
         (logs_dir).mkdir(parents=True, exist_ok=True)
         (logs_dir / job_id).mkdir(parents=True, exist_ok=True)
 
+        download_index.register_pending(payload.url, "video", None, payload.format, job_id, now_iso())
         background_tasks.add_task(
             yt_download_video,
             payload.url,
