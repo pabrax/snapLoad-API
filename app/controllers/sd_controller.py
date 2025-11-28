@@ -18,13 +18,14 @@ def _unique_dest(dest: Path) -> Path:
         i += 1
     return candidate
 
-def download(url: str, download_dir: str, callback=None, job_id: str = None, logs_dir: str | Path = None):
-    """
-    Wrapper que lanza la descarga en un thread.
-    Para uso con la API (BackgroundTasks) se recomienda llamar a `download_sync` directamente.
+def download(url: str, download_dir: str, callback=None, job_id: str = None, logs_dir: str | Path = None, quality: str | None = None):
+    """Wrapper que lanza la descarga en un thread.
+
+    Ahora acepta `quality` (bitrate) para que el endpoint `/download` pueda pasarla.
+    Mantiene compatibilidad si se omite.
     """
 
-    thread = threading.Thread(target=download_sync, args=(url, download_dir, callback, job_id, logs_dir))
+    thread = threading.Thread(target=download_sync, args=(url, download_dir, callback, job_id, logs_dir, quality))
     thread.daemon = True
     thread.start()
 

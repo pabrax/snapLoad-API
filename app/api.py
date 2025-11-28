@@ -5,9 +5,9 @@ from .routes.download import router as download_router
 from .routes.files import router as files_router
 
 app = FastAPI(
-    title="CCAPI",
-    description="API para descargar música y videos de Spotify usando spotdl y youtube utilizando yt-dlp",
-    version="1.1.0"
+    title="SnapLoad API",
+    description="REST API for downloading media from YouTube and Spotify using yt-dlp and spotdl",
+    version="1.0.0"
 )
 
 ## Include routers

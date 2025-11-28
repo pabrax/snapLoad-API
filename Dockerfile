@@ -1,4 +1,4 @@
-# Dockerfile for CCAPI (FastAPI app)
+# Dockerfile for SnapLoad API (FastAPI app)
 # - Based on Python 3.12 slim
 # - Installs system deps (ffmpeg) required by yt-dlp / spotdl
 # - Installs Python deps and common CLI tools (yt-dlp, spotdl)
