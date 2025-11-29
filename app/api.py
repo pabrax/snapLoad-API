@@ -1,28 +1,33 @@
+"""
+Aplicación FastAPI principal.
+Define la app y configura los routers y lifecycle hooks.
+"""
 from fastapi import FastAPI
 
+from .core.config import settings
 from .routes.health import router as health_router
 from .routes.download import router as download_router
 from .routes.files import router as files_router
 
+# Crear aplicación
 app = FastAPI(
-    title="SnapLoad API",
-    description="REST API for downloading media from YouTube and Spotify using yt-dlp and spotdl",
-    version="1.0.0"
+    title=settings.APP_TITLE,
+    description=settings.APP_DESCRIPTION,
+    version=settings.APP_VERSION
 )
 
-## Include routers
-
+# Incluir routers
 app.include_router(health_router)
 app.include_router(download_router)
 app.include_router(files_router)
 
 
 @app.on_event("shutdown")
-def _on_shutdown():
-    # try to terminate all running jobs gracefully
+def on_shutdown():
+    """Termina todos los jobs al cerrar la aplicación."""
     try:
-        from .job_registry import terminate_all
-
-        terminate_all()
+        from .managers import job_manager
+        job_manager.terminate_all()
     except Exception:
         pass
+

@@ -1,191 +1,351 @@
+"""
+Rutas de descarga refactorizadas usando DownloadOrchestrator.
+Eliminado: lógica de negocio, SQL directo, validación duplicada, manipulación directa de archivos.
+"""
 import json
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
-import uuid
 
-from app.models import DownloadRequest, VideoDownloadRequest
-from app.utils import is_spotify_url, is_youtube_url, is_valid_bitrate, normalize_quality, is_valid_video_format, now_iso
-from app.controllers.sd_controller import download
-from app.controllers.yt_controller import download_audio, download_video as yt_download_video
-from app.utils import DOWNLOAD_DIR, BASE_DIR
-from app.storage.index import download_index
+from ..schemas import DownloadRequest, VideoDownloadRequest
+from ..services import download_orchestrator
+from ..repositories import download_index_repo
+from ..managers import file_manager, metadata_manager, job_manager
+from ..validators import URLValidator, QualityValidator, FormatValidator
+from ..helpers import DateTimeHelper
+from ..core.config import settings
+from ..core.exceptions import InvalidURLException, InvalidQualityException, InvalidFormatException
 
 
+router = APIRouter(tags=["download"])
 
-router = APIRouter(tags=["Download"])
+
+@router.get("/lookup")
+def lookup_endpoint(url: str, type: str = "audio", quality: str = None, format: str = None):
+    """
+    Verifica si una descarga existe en cache o catálogo.
+    Retorna estado: ready (disponible), pending (en progreso), miss (no existe).
+    """
+    try:
+        # Validar parámetros
+        if not url:
+            raise HTTPException(status_code=400, detail="URL requerida")
+        
+        # Validar URL
+        try:
+            URLValidator.validate_url(url)  # Valida que sea Spotify o YouTube
+        except InvalidURLException as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        # Validar quality si se proporciona
+        normalized_quality = None
+        if quality:
+            try:
+                if "spotify" in url.lower():
+                    normalized_quality = QualityValidator.normalize_quality(quality).get("spotdl")
+                else:
+                    normalized_quality = QualityValidator.normalize_quality(quality).get("ytdlp")
+            except InvalidQualityException as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        
+        # Validar format si se proporciona (solo para video)
+        if format:
+            try:
+                FormatValidator.validate_format(format)
+            except InvalidFormatException as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        
+        # Usar orchestrator para verificar disponibilidad
+        result = download_orchestrator.check_availability(
+            url=url,
+            media_type=type,
+            quality=normalized_quality,
+            format_=format
+        )
+        
+        response_data = {
+            "status": result.status,
+            "url": url,
+            "type": type,
+        }
+        
+        if result.status == "ready":
+            response_data.update({
+                "job_id": result.job_id,
+                "files": result.files,
+                "source": result.source,
+            })
+            if normalized_quality:
+                response_data["quality"] = normalized_quality
+            if format:
+                response_data["format"] = format
+        elif result.status == "pending":
+            response_data.update({
+                "job_id": result.job_id,
+            })
+        else:  # miss
+            response_data.update({
+                "quality": normalized_quality,
+                "format": format,
+            })
+        
+        return JSONResponse(status_code=200, content=response_data)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _get_job_status_response(job_id: str):
+    """
+    Función interna para obtener el estado de un job.
+    Compartida entre /jobs/{job_id} y /status/{job_id}.
+    """
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id requerido")
+    
+    # Intentar leer metadata
+    metadata = None
+    try:
+        metadata = metadata_manager.read_metadata(job_id)
+    except Exception:
+        pass
+    
+    # Buscar en download index
+    download_info = download_index_repo.find_by_job_id(job_id)
+    
+    # Consolidar información
+    status = None
+    files = []
+    error = None
+    
+    if metadata:
+        status = metadata.status.value if hasattr(metadata.status, 'value') else metadata.status
+        files = [{"name": f.name, "path": f.path, "size_bytes": f.size_bytes} for f in metadata.files]
+        error = metadata.error
+    
+    if not status and download_info:
+        status = download_info.status
+        files = [{"path": f} for f in download_info.files]
+        error = download_info.error
+    
+    if not status:
+        raise HTTPException(status_code=404, detail="job no encontrado")
+    
+    return JSONResponse(content={
+        "job_id": job_id,
+        "status": status,
+        "files": files,
+        "error": error,
+    })
+
+
+@router.get("/jobs/{job_id}")
+def job_status(job_id: str):
+    """
+    Obtiene el estado de un job por su ID.
+    Busca en metadata y download index.
+    """
+    try:
+        return _get_job_status_response(job_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/download")
 def download_endpoint(payload: DownloadRequest, background_tasks: BackgroundTasks):
+    """
+    Inicia una descarga de audio (Spotify o YouTube).
+    Usa DownloadOrchestrator para manejar la lógica.
+    """
     try:
-        # Decide source by inspecting the URL (no `type` field used)
         url = payload.url
-        if not url or not isinstance(url, str):
-            raise HTTPException(status_code=400, detail="URL inválida")
-
-        # Validate and normalize quality if provided
-        normalized = None
-        if payload.quality is not None:
-            if not is_valid_bitrate(payload.quality):
-                raise HTTPException(status_code=400, detail="quality inválida; use '0', 'bestaudio' o valores numéricos como '320k' or '128'.")
-            normalized = normalize_quality(payload.quality)
-
-        # Spotify path
-        if is_spotify_url(url):
-            # lookup cache (type audio, quality spotdl variant)
-            spot_quality = (normalized["spotdl"] if normalized else None)
-            cached = download_index.lookup(url, "audio", quality=spot_quality, format_=None)
-            if cached and cached.get("status") == "ready":
-                download_index.touch(url, "audio", spot_quality, None, now_iso())
-                return JSONResponse(status_code=200, content={
-                    "message": "Reusado desde cache",
-                    "job_id": cached.get("job_id"),
-                    "url": url,
-                    "source": "spotify",
-                    "files": cached.get("files", []),
-                })
-
-            job_id = uuid.uuid4().hex[:8]
-            logs_dir = BASE_DIR / "logs" / "spotify"
-            (logs_dir).mkdir(parents=True, exist_ok=True)
-            (logs_dir / job_id).mkdir(parents=True, exist_ok=True)
-
-            # Encolar spotdl (wrapper que lanza hilo daemon)
-            download_index.register_pending(url, "audio", spot_quality, None, job_id, now_iso())
-            background_tasks.add_task(
-                download,
-                url,
-                DOWNLOAD_DIR,
-                job_id=job_id,
-                logs_dir=logs_dir,
-                quality=spot_quality,
-            )
-
-            return JSONResponse(status_code=202, content={
-                "message": "Descarga encolada",
-                "job_id": job_id,
+        
+        if not url:
+            raise HTTPException(status_code=400, detail="URL requerida")
+        
+        # Validar y normalizar quality
+        normalized_quality = None
+        if payload.quality:
+            try:
+                normalized = QualityValidator.normalize_quality(payload.quality)
+                # Determinar cual usar basándose en la URL
+                if "spotify" in url.lower():
+                    normalized_quality = normalized.get("spotdl")
+                else:
+                    normalized_quality = normalized.get("ytdlp")
+            except InvalidQualityException as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        
+        # Verificar disponibilidad primero
+        availability = download_orchestrator.check_availability(
+            url=url,
+            media_type="audio",
+            quality=normalized_quality,
+            format_=None
+        )
+        
+        if availability.status == "ready":
+            return JSONResponse(status_code=200, content={
+                "message": f"Reusado desde {availability.source}",
+                "status": "ready",
+                "job_id": availability.job_id,
                 "url": url,
-                "source": "spotify",
+                "files": availability.files,
             })
-
-        # YouTube audio path
-        if is_youtube_url(url):
-            yt_quality = (normalized["ytdlp"] if normalized else None)
-            cached = download_index.lookup(url, "audio", quality=yt_quality, format_=None)
-            if cached and cached.get("status") == "ready":
-                download_index.touch(url, "audio", yt_quality, None, now_iso())
-                return JSONResponse(status_code=200, content={
-                    "message": "Reusado desde cache",
-                    "job_id": cached.get("job_id"),
-                    "url": url,
-                    "source": "youtube_audio",
-                    "files": cached.get("files", []),
-                })
-
-            job_id = uuid.uuid4().hex[:8]
-            logs_dir = BASE_DIR / "logs" / "yt"
-            (logs_dir).mkdir(parents=True, exist_ok=True)
-            (logs_dir / job_id).mkdir(parents=True, exist_ok=True)
-
-            download_index.register_pending(url, "audio", yt_quality, None, job_id, now_iso())
-            background_tasks.add_task(
-                download_audio,
-                url,
-                DOWNLOAD_DIR,
-                job_id=job_id,
-                logs_dir=logs_dir,
-                quality=yt_quality,
-            )
-
+        
+        if availability.status == "pending":
             return JSONResponse(status_code=202, content={
-                "message": "Descarga encolada",
-                "job_id": job_id,
+                "message": "Descarga ya en progreso",
+                "status": "pending",
+                "job_id": availability.job_id,
                 "url": url,
-                "source": "youtube_audio",
             })
-
-        raise HTTPException(status_code=400, detail="URL inválida: solo se aceptan enlaces/URIs de Spotify o YouTube")
-
-    except HTTPException as he:
-        raise he
-    except HTTPException as he:
-        raise he
+        
+        # Iniciar nueva descarga
+        result = download_orchestrator.initiate_download(
+            url=url,
+            media_type="audio",
+            quality=normalized_quality,
+            format_=None
+        )
+        
+        return JSONResponse(status_code=202, content={
+            "message": "Descarga encolada",
+            "job_id": result["job_id"],
+            "url": url,
+            "source": result["source"],
+        })
+        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/download/video")
 def download_video(payload: VideoDownloadRequest, background_tasks: BackgroundTasks):
-    # Validate URL before entering try/except so HTTPException isn't accidentally caught
-    if not is_youtube_url(payload.url):
-        raise HTTPException(status_code=400, detail="URL inválida: solo se aceptan enlaces de YouTube")
-
+    """
+    Inicia una descarga de video de YouTube.
+    """
     try:
-        # Validate requested video format
-        if payload.format is not None and not is_valid_video_format(payload.format):
-            raise HTTPException(status_code=400, detail=f"format inválido: {payload.format}. formatos aceptados: webm, mp4, mkv, mov, avi")
-        cached = download_index.lookup(payload.url, "video", quality=None, format_=payload.format)
-        if cached and cached.get("status") == "ready":
-            download_index.touch(payload.url, "video", None, payload.format, now_iso())
-            return JSONResponse(status_code=200, content={
-                "message": "Reusado desde cache",
-                "job_id": cached.get("job_id"),
-                "url": payload.url,
-                "source": "youtube_video",
-                "files": cached.get("files", []),
-                "format": payload.format,
-            })
-
-        job_id = uuid.uuid4().hex[:8]
-        logs_dir = BASE_DIR / "logs" / "yt"
-        (logs_dir).mkdir(parents=True, exist_ok=True)
-        (logs_dir / job_id).mkdir(parents=True, exist_ok=True)
-
-        download_index.register_pending(payload.url, "video", None, payload.format, job_id, now_iso())
-        background_tasks.add_task(
-            yt_download_video,
-            payload.url,
-            DOWNLOAD_DIR,
-            payload.format,
-            job_id=job_id,
-            logs_dir=logs_dir,
+        url = payload.url
+        
+        # Validar URL
+        try:
+            URLValidator.validate_url(url, allowed_sources=['youtube'])
+        except InvalidURLException as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        # Validar formato
+        video_format = payload.format or "webm"
+        try:
+            FormatValidator.validate_format(video_format)
+        except InvalidFormatException as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        # Verificar disponibilidad
+        availability = download_orchestrator.check_availability(
+            url=url,
+            media_type="video",
+            quality=None,
+            format_=video_format
         )
-
-        return JSONResponse(status_code=202, content={"message": "Descarga encolada", "job_id": job_id, "url": payload.url})
-    except HTTPException as he:
-        raise he
+        
+        if availability.status == "ready":
+            return JSONResponse(status_code=200, content={
+                "message": f"Reusado desde {availability.source}",
+                "status": "ready",
+                "job_id": availability.job_id,
+                "url": url,
+                "source": "youtube_video",
+                "files": availability.files,
+                "format": video_format,
+            })
+        
+        if availability.status == "pending":
+            return JSONResponse(status_code=202, content={
+                "message": "Descarga ya en progreso",
+                "status": "pending",
+                "job_id": availability.job_id,
+                "url": url,
+                "source": "youtube_video",
+            })
+        
+        # Iniciar nueva descarga
+        result = download_orchestrator.initiate_download(
+            url=url,
+            media_type="video",
+            quality=None,
+            format_=video_format
+        )
+        
+        return JSONResponse(status_code=202, content={
+            "message": "Descarga encolada",
+            "job_id": result["job_id"],
+            "url": url,
+            "source": "youtube_video",
+        })
+        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
 @router.post("/cancel/{job_id}")
 def cancel_job(job_id: str):
-    """Intentar cancelar un job en ejecución identificándolo por `job_id`."""
-    from app.job_registry import terminate_job, get_job_proc
-
-    proc = get_job_proc(job_id)
-    if not proc:
-        # If no process registered, check if meta exists and was already finished
-        meta_path = BASE_DIR / "meta" / f"meta-{job_id}.json"
-        if not meta_path.exists():
-            raise HTTPException(status_code=404, detail="job no encontrado")
-        data = json.loads(meta_path.read_text(encoding="utf-8"))
-        status = data.get("status")
-        return JSONResponse(content={"job_id": job_id, "cancelled": False, "status": status})
-
-    ok = terminate_job(job_id)
-    if ok:
-        # mark meta as cancelled if exists
+    """
+    Cancela un job en ejecución.
+    """
+    try:
+        if not job_id:
+            raise HTTPException(status_code=400, detail="job_id requerido")
+        
+        # Intentar terminar el proceso
+        success = job_manager.terminate_job(job_id)
+        
+        if not success:
+            # Verificar si el job existe en metadata
+            try:
+                metadata = metadata_manager.read_metadata(job_id)
+                return JSONResponse(content={
+                    "job_id": job_id,
+                    "cancelled": False,
+                    "status": metadata.status.value if hasattr(metadata.status, 'value') else metadata.status,
+                })
+            except Exception:
+                raise HTTPException(status_code=404, detail="job no encontrado")
+        
+        # Actualizar metadata si existe
         try:
-            meta_path = BASE_DIR / "meta" / f"meta-{job_id}.json"
-            if meta_path.exists():
-                data = json.loads(meta_path.read_text(encoding="utf-8"))
-                data["status"] = "cancelled"
-                data["finished_at"] = now_iso()
-                with open(meta_path, "w", encoding="utf-8") as mf:
-                    json.dump(data, mf, indent=2, ensure_ascii=False)
+            metadata = metadata_manager.read_metadata(job_id)
+            # Actualizar status (esto se podría hacer en el manager)
+            from ..schemas import JobMetadata
+            updated = JobMetadata(
+                job_id=metadata.job_id,
+                url=metadata.url,
+                media_type=metadata.media_type,
+                status="cancelled",
+                files=metadata.files,
+                created_at=metadata.created_at,
+                started_at=metadata.started_at,
+                finished_at=DateTimeHelper.now_iso(),
+                error=metadata.error,
+            )
+            metadata_manager.write_metadata(updated)
         except Exception:
             pass
-
-    return JSONResponse(content={"job_id": job_id, "cancelled": ok})
-
+        
+        return JSONResponse(content={
+            "job_id": job_id,
+            "cancelled": success,
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

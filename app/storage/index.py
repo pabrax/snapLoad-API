@@ -1,122 +1,48 @@
-import sqlite3
-import json
-from pathlib import Path
-from typing import Optional, List, Dict, Any
+"""
+Índice de descargas (compatibilidad hacia atrás).
+Este módulo re-exporta desde repositories para mantener compatibilidad.
+Para nuevo código, importar directamente desde repositories.
+"""
+from ..repositories import download_index_repo
 
-DB_PATH = Path(__file__).resolve().parents[1] / "storage" / "downloads.db"
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-
-def _connect():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
-
-
+# Crear clase wrapper para mantener compatibilidad con la API anterior
 class DownloadIndex:
+    """Wrapper de compatibilidad para DownloadIndexRepository."""
+    
     def __init__(self):
-        self.ensure_schema()
-
+        self._repo = download_index_repo
+    
     def ensure_schema(self):
-        con = _connect()
-        try:
-            con.execute(
-                """
-                CREATE TABLE IF NOT EXISTS downloads (
-                  url TEXT NOT NULL,
-                  type TEXT NOT NULL,
-                  quality TEXT,
-                  format TEXT,
-                  files_json TEXT,
-                  status TEXT NOT NULL,
-                  job_id TEXT,
-                  created_at TEXT NOT NULL,
-                  last_access TEXT,
-                  error TEXT,
-                  PRIMARY KEY (url, type, quality, format)
-                )
-                """
-            )
-            con.commit()
-        finally:
-            con.close()
-
-    def lookup(self, url: str, type_: str, quality: Optional[str] = None, format_: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        con = _connect()
-        try:
-            cur = con.execute(
-                "SELECT url,type,quality,format,files_json,status,job_id,created_at,last_access,error FROM downloads WHERE url=? AND type=? AND IFNULL(quality,'')=IFNULL(?, '') AND IFNULL(format,'')=IFNULL(?, '')",
-                (url, type_, quality, format_),
-            )
-            row = cur.fetchone()
-            if not row:
-                return None
-            rec = {
-                "url": row[0],
-                "type": row[1],
-                "quality": row[2],
-                "format": row[3],
-                "files": json.loads(row[4]) if row[4] else [],
-                "status": row[5],
-                "job_id": row[6],
-                "created_at": row[7],
-                "last_access": row[8],
-                "error": row[9],
-            }
-            if rec["status"] == "ready":
-                missing = [p for p in rec["files"] if not Path(p).exists()]
-                if missing:
-                    con.execute(
-                        "UPDATE downloads SET status='failed', error=? WHERE url=? AND type=? AND IFNULL(quality,'')=IFNULL(?, '') AND IFNULL(format,'')=IFNULL(?, '')",
-                        (f"missing_files:{missing}", url, type_, quality, format_),
-                    )
-                    con.commit()
-                    return None
-            return rec
-        finally:
-            con.close()
-
-    def register_pending(self, url: str, type_: str, quality: Optional[str], format_: Optional[str], job_id: str, created_at: str):
-        con = _connect()
-        try:
-            con.execute(
-                "INSERT OR REPLACE INTO downloads(url,type,quality,format,files_json,status,job_id,created_at,last_access,error) VALUES (?,?,?,?,?, 'pending', ?, ?, NULL, NULL)",
-                (url, type_, quality, format_, json.dumps([]), job_id, created_at),
-            )
-            con.commit()
-        finally:
-            con.close()
-
-    def register_success(self, job_id: str, files: List[str]):
-        con = _connect()
-        try:
-            con.execute(
-                "UPDATE downloads SET files_json=?, status='ready', error=NULL WHERE job_id=?",
-                (json.dumps(files), job_id),
-            )
-            con.commit()
-        finally:
-            con.close()
-
+        """Asegura que el esquema existe."""
+        self._repo.ensure_schema()
+    
+    def lookup(self, url: str, type_: str, quality=None, format_=None):
+        """Busca una descarga en el índice."""
+        result = self._repo.lookup(url, type_, quality, format_)
+        if result:
+            return result.dict()
+        return None
+    
+    def register_pending(self, url: str, type_: str, quality, format_, job_id: str, created_at: str):
+        """Registra una descarga pendiente."""
+        self._repo.register_pending(url, type_, quality, format_, job_id, created_at)
+    
+    def register_success(self, job_id: str, files: list):
+        """Marca un job como exitoso."""
+        self._repo.register_success(job_id, files)
+    
     def register_failed(self, job_id: str, error: str):
-        con = _connect()
-        try:
-            con.execute(
-                "UPDATE downloads SET status='failed', error=? WHERE job_id=?",
-                (error, job_id),
-            )
-            con.commit()
-        finally:
-            con.close()
-
-    def touch(self, url: str, type_: str, quality: Optional[str], format_: Optional[str], last_access: str):
-        con = _connect()
-        try:
-            con.execute(
-                "UPDATE downloads SET last_access=? WHERE url=? AND type=? AND IFNULL(quality,'')=IFNULL(?, '') AND IFNULL(format,'')=IFNULL(?, '')",
-                (last_access, url, type_, quality, format_),
-            )
-            con.commit()
-        finally:
-            con.close()
+        """Marca un job como fallido."""
+        self._repo.register_failed(job_id, error)
+    
+    def touch(self, url: str, type_: str, quality, format_, last_access: str):
+        """Actualiza el timestamp de último acceso."""
+        self._repo.touch(url, type_, quality, format_, last_access)
+    
+    def upsert_ready(self, url: str, type_: str, quality, format_, files: list, created_at: str, job_id=None):
+        """Inserta o actualiza una entrada como lista."""
+        self._repo.upsert_ready(url, type_, quality, format_, files, created_at, job_id)
 
 
 download_index = DownloadIndex()
+
