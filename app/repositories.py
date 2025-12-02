@@ -120,11 +120,9 @@ class DownloadIndexRepository(BaseRepository):
                 error=row[9],
             )
             
-            # Verificar que los archivos existen
             if entry.status == "ready":
                 missing = [p for p in entry.files if not Path(p).exists()]
                 if missing:
-                    # Marcar como fallido si faltan archivos
                     self._mark_as_failed(url, media_type, quality, format_, f"missing_files:{missing}")
                     return None
             
@@ -377,6 +375,135 @@ class DownloadIndexRepository(BaseRepository):
             )
         finally:
             con.close()
+    
+    def get_all_ready_entries(self) -> List[DownloadIndexEntry]:
+        """
+        Obtiene todas las entradas con status='ready'.
+        
+        Returns:
+            Lista de DownloadIndexEntry
+        """
+        con = self._connect()
+        try:
+            cur = con.execute(
+                """SELECT url, type, quality, format, files_json, status, job_id,
+                          created_at, last_access, error
+                   FROM downloads WHERE status='ready'"""
+            )
+            rows = cur.fetchall()
+            
+            entries = []
+            for row in rows:
+                entries.append(DownloadIndexEntry(
+                    url=row[0],
+                    type=row[1],
+                    quality=row[2],
+                    format=row[3],
+                    files=json.loads(row[4]) if row[4] else [],
+                    status=row[5],
+                    job_id=row[6],
+                    created_at=row[7],
+                    last_access=row[8],
+                    error=row[9],
+                ))
+            
+            return entries
+        finally:
+            con.close()
+    
+    def get_old_failed_entries(self, max_age_hours: float) -> List[DownloadIndexEntry]:
+        """
+        Obtiene entradas con status='failed' más antiguas que max_age_hours.
+        
+        Args:
+            max_age_hours: Edad máxima en horas
+            
+        Returns:
+            Lista de DownloadIndexEntry
+        """
+        from datetime import datetime, timedelta
+        
+        con = self._connect()
+        try:
+            # Calcular timestamp límite
+            cutoff = (datetime.now() - timedelta(hours=max_age_hours)).isoformat()
+            
+            cur = con.execute(
+                """SELECT url, type, quality, format, files_json, status, job_id,
+                          created_at, last_access, error
+                   FROM downloads 
+                   WHERE status='failed' AND created_at < ?""",
+                (cutoff,)
+            )
+            rows = cur.fetchall()
+            
+            entries = []
+            for row in rows:
+                entries.append(DownloadIndexEntry(
+                    url=row[0],
+                    type=row[1],
+                    quality=row[2],
+                    format=row[3],
+                    files=json.loads(row[4]) if row[4] else [],
+                    status=row[5],
+                    job_id=row[6],
+                    created_at=row[7],
+                    last_access=row[8],
+                    error=row[9],
+                ))
+            
+            return entries
+        finally:
+            con.close()
+    
+    def delete_entry(
+        self,
+        url: str,
+        media_type: str,
+        quality: Optional[str],
+        format_: Optional[str]
+    ) -> bool:
+        """
+        Elimina una entrada del índice.
+        
+        Args:
+            url: URL
+            media_type: Tipo de media
+            quality: Calidad opcional
+            format_: Formato opcional
+            
+        Returns:
+            True si se eliminó, False si no existía
+        """
+        con = self._connect()
+        try:
+            cur = con.execute(
+                """DELETE FROM downloads 
+                   WHERE url=? AND type=? 
+                     AND IFNULL(quality,'')=IFNULL(?, '') 
+                     AND IFNULL(format,'')=IFNULL(?, '')""",
+                (url, media_type, quality, format_),
+            )
+            con.commit()
+            return cur.rowcount > 0
+        finally:
+            con.close()
+    
+    def _get_total_records(self) -> int:
+        """
+        Obtiene el total de registros en la tabla downloads.
+        
+        Returns:
+            Número de registros
+        """
+        con = self._connect()
+        try:
+            cur = con.execute("SELECT COUNT(*) FROM downloads")
+            row = cur.fetchone()
+            return row[0] if row else 0
+        finally:
+            con.close()
+
 
 
 class MediaRepository(BaseRepository):

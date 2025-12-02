@@ -50,16 +50,9 @@ class FileNameHelper:
         if max_length is None:
             max_length = settings.MAX_FILENAME_LENGTH
         
-        # Normalize
         name = unicodedata.normalize("NFC", name)
-        
-        # Replace path separators
         name = name.replace("/", "-").replace("\\", "-")
-        
-        # Remove control characters
         name = re.sub(r"[\x00-\x1f\x7f]+", "", name)
-        
-        # Collapse repeated spaces
         name = re.sub(r"\s+", " ", name).strip()
         
         if len(name) > max_length:

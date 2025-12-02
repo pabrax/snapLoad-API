@@ -153,22 +153,17 @@ class BaseDownloadService(ABC):
                     preexec_fn=os.setsid,
                 )
                 
-                # Registrar job
                 self.job_manager.register_job(job_id, process)
                 
-                # Capturar salida
                 raw_output = self._capture_output(process, log_file)
             
-            # 5. Procesar resultado
             finished_at = DateTimeHelper.now_iso()
             self.job_manager.unregister_job(job_id)
             
             success = process.returncode == 0
             
-            # 6. Mover archivos
             moved_files = self._move_files(paths["temp_dir"], paths["download_dir"])
             
-            # 7. Verificar éxito real
             if success and len(moved_files) == 0:
                 success = False
                 error_msg = self._extract_error_from_output(raw_output)
@@ -236,10 +231,8 @@ class BaseDownloadService(ABC):
         Returns:
             Dict con las rutas necesarias
         """
-        # Determinar calidad o formato según el tipo
         quality_or_format = kwargs.get("quality") or kwargs.get("format")
         
-        # Rutas
         download_dir = self.file_manager.get_download_path(
             self.get_media_type().value, quality_or_format
         )
@@ -416,6 +409,9 @@ class BaseDownloadService(ABC):
             error=error,
             created_at=created_at,
         )
+        
+        # ⭐ IMPORTANTE: Registrar el fallo en el índice
+        self.download_index.register_failed(job_id, error)
         
         print(f"JOB {job_id} STATUS failed reason=validation_error")
     

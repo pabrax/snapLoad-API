@@ -8,11 +8,26 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.103+-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![yt-dlp](https://img.shields.io/badge/yt--dlp-latest-red?style=flat&logo=youtube&logoColor=white)](https://github.com/yt-dlp/yt-dlp)
 [![spotdl](https://img.shields.io/badge/spotdl-4.4+-1DB954?style=flat&logo=spotify&logoColor=white)](https://github.com/spotDL/spotify-downloader)
-[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat)](../LICENSE)
 
-*A high-performance asynchronous API for media downloads with job queuing, progress tracking, and comprehensive metadata management.*
+*High-performance asynchronous API for media downloads with job queuing, progress tracking, and automatic storage management.*
+
+[Official Web Client](https://github.com/pabrax/SnapLoad) | [API Documentation](#-api-reference) | [Report Issues](https://github.com/pabrax/SnapLoad/issues)
+
+**🇬🇧 English** | [🇪🇸 Español](docs/README.es.md)
 
 </div>
+
+---
+
+## 🚀 Quick Start (Full Stack)
+
+**Want to run the complete application (Backend + Frontend)?** Use the monorepo:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pabrax/SnapLoad/main/install.sh | bash
+```
+
+This will install and run both the API and the web interface together. **[See full documentation](https://github.com/pabrax/SnapLoad)**
 
 ---
 
@@ -20,558 +35,409 @@
 
 - [Overview](#-overview)
 - [Features](#-features)
-- [Architecture](#-architecture)
-- [Requirements](#-requirements)
+- [Quick Start](#-quick-start)
 - [Installation](#-installation)
 - [Configuration](#-configuration)
 - [API Reference](#-api-reference)
-- [Job Lifecycle](#-job-lifecycle)
-- [File Structure](#-file-structure)
-- [Error Handling](#-error-handling)
+- [Storage Management](#-storage-management)
 - [Development](#-development)
-- [Deployment](#-deployment)
-- [Security Considerations](#-security-considerations)
+- [Docker Deployment](#-docker-deployment)
 - [Troubleshooting](#-troubleshooting)
 - [Legal Disclaimer](#%EF%B8%8F-legal-disclaimer)
-- [Contributing](#-contributing)
 - [License](#-license)
 
 ---
 
 ## 🌟 Overview
 
-**SnapLoad API** is a REST API built with FastAPI that provides asynchronous media downloading capabilities from YouTube (via `yt-dlp`) and Spotify (via `spotdl`). The API features a robust job management system with real-time status tracking, comprehensive error handling, and detailed metadata generation.
+**SnapLoad API** is a production-ready REST API built with FastAPI that provides asynchronous media downloading from YouTube, Spotify, and 1000+ sites. Designed for resource-constrained servers with automatic cleanup, job management, and comprehensive error handling.
 
-### Key Characteristics
+### Key Features
 
-- **Asynchronous Processing**: Downloads run as background tasks, providing immediate response
-- **Job Management**: Full lifecycle tracking with unique job IDs
-- **Multi-Platform Support**: YouTube, Spotify, and 1000+ sites supported by yt-dlp
-- **Progress Tracking**: Real-time status updates and detailed logs
-- **Metadata Generation**: Complete job information with timestamps and file details
-- **Docker Ready**: Containerized deployment with Docker Compose
-- **Cancellation Support**: Cancel running downloads via API
+- ⚡ **Async Processing**: Background job execution with immediate API response
+- 🎯 **Smart Job Management**: Unique job IDs with full lifecycle tracking
+- 🌐 **Multi-Platform**: YouTube, Spotify, SoundCloud, and more via yt-dlp
+- 📊 **Progress Tracking**: Real-time status updates and detailed metadata
+- 🧹 **Auto Cleanup**: Configurable retention policies to manage storage
+- 🔒 **Production Ready**: Health checks, error handling, and comprehensive logging
+- 📦 **File Management**: Download individual files or complete archives (playlists/albums)
 
----
+### Supported Platforms
 
-## ✨ Features
-
-### Core Capabilities
-
-- ✅ **Multi-Source Downloads**: YouTube, Spotify, and yt-dlp supported platforms
-- ✅ **Audio & Video Formats**: MP3, M4A, MP4, and more
-- ✅ **Playlist Support**: Download entire Spotify playlists or YouTube playlists
-- ✅ **Quality Selection**: Choose audio/video quality preferences
-- ✅ **Job Queuing**: Background task processing with FastAPI
-- ✅ **Real-Time Status**: Check job status (`queued`, `running`, `success`, `failed`)
-- ✅ **Comprehensive Logging**: Full download logs and error traces
-- ✅ **Metadata Storage**: JSON metadata for every job
-- ✅ **Download Cancellation**: Stop running jobs via API
-- ✅ **Health Checks**: API health and readiness endpoints
-
-### Technical Features
-
-- **FastAPI Framework**: Modern async Python web framework
-- **Background Tasks**: Non-blocking download processing
-- **File Management**: Organized downloads, logs, and temporary files
-- **Error Recovery**: Graceful error handling with detailed error messages
-- **Process Management**: Job registry for tracking running processes
-- **CORS Support**: Configurable CORS for frontend integration
+- **YouTube**: Videos, playlists, channels (audio/video)
+- **Spotify**: Tracks, albums, playlists (downloads via YouTube search)
+- **1000+ sites**: Anything supported by [yt-dlp](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
 
 ---
 
-## 🏗️ Architecture
+## 🚀 Quick Start
 
-### System Components
+### Prerequisites
 
-```
-┌─────────────────┐
-│   Client/UI     │
-└────────┬────────┘
-         │ HTTP Requests
-         ▼
-┌─────────────────┐
-│   FastAPI App   │
-│  (api.py)       │
-└────────┬────────┘
-         │
-    ┌────┴────┬────────────┬──────────┐
-    ▼         ▼            ▼          ▼
-┌────────┐ ┌──────┐  ┌─────────┐ ┌────────┐
-│Routes  │ │Models│  │Job Reg. │ │Utils   │
-└───┬────┘ └──────┘  └────┬────┘ └────────┘
-    │                      │
-    └──────────┬───────────┘
-               ▼
-       ┌───────────────┐
-       │ Controllers   │
-       │ (sd/yt)       │
-       └───────┬───────┘
-               │
-    ┌──────────┼──────────┐
-    ▼          ▼          ▼
-┌────────┐ ┌────────┐ ┌────────┐
-│ spotdl │ │yt-dlp  │ │ffmpeg  │
-└────────┘ └────────┘ └────────┘
+- Python 3.12+
+- ffmpeg
+- Internet connection
+
+### Installation
+
+```bash
+# Clone repository
+git clone https://github.com/pabrax/SnapLoad.git
+cd SnapLoad/snapLoad-API
+
+# Install uv (recommended package manager)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install dependencies
+uv sync
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your preferred settings
+
+# Run server
+uv run python main.py
 ```
 
-### Request Flow
+Server will be available at `http://localhost:8000`
 
-1. **Client Request**: POST to `/download` with URL and type
-2. **Validation**: URL validation and job ID generation
-3. **Job Creation**: Background task created, metadata initialized
-4. **Processing**: spotdl/yt-dlp executes download
-5. **Status Updates**: Metadata updated throughout process
-6. **File Management**: Downloaded files moved to destination
-7. **Completion**: Final status and metadata saved
+### Quick Test
+
+```bash
+# Download a YouTube video
+curl -X POST http://localhost:8000/download \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "quality": "192"}'
+
+# Response: {"job_id": "abc123", "status": "queued", "message": "Download queued"}
+
+# Check status
+curl http://localhost:8000/status/abc123
+
+# Download file when ready
+curl http://localhost:8000/files/abc123/download/filename.mp3 -O
+```
 
 ---
 
-## 📦 Requirements
+## 📦 Installation
+
+### Using uv (Recommended)
+
+```bash
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone and setup
+git clone https://github.com/pabrax/SnapLoad.git
+cd SnapLoad/snapLoad-API
+uv sync
+```
+
+### Using pip
+
+```bash
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
 
 ### System Dependencies
 
-- **Python**: 3.12 or higher
-- **ffmpeg**: Required for audio/video processing
-- **git**: For some installation processes
-
-### Python Dependencies
-
-All dependencies are managed via `pyproject.toml`:
-
-```toml
-fastapi >= 0.103.2
-uvicorn >= 0.23.2
-yt-dlp >= 2025.11.12
-spotdl >= 4.4.3
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install ffmpeg python3-pip
 ```
 
-### Installing System Dependencies
-
-**Debian/Ubuntu:**
+**macOS:**
 ```bash
-sudo apt update && sudo apt install -y ffmpeg git build-essential
-```
-
-**macOS (Homebrew):**
-```bash
-brew install ffmpeg git
+brew install ffmpeg python@3.12
 ```
 
 **Windows:**
-- Download ffmpeg from [ffmpeg.org](https://ffmpeg.org/download.html)
-- Add to PATH
-
----
-
-## 🚀 Installation
-
-### Option 1: Local Development
-
-1. **Clone Repository**
-   ```bash
-   cd CCAPI  # Backend directory
-   ```
-
-2. **Create Virtual Environment**
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # Linux/macOS
-   # .venv\Scripts\activate  # Windows
-   ```
-
-3. **Install Dependencies**
-   ```bash
-   pip install --upgrade pip
-   pip install -e .
-   ```
-
-4. **Run Development Server**
-   ```bash
-   python main.py
-   # or
-   uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
-   ```
-
-The API will be available at `http://localhost:8000`
-
-### Option 2: Docker
-
-1. **Build Image**
-   ```bash
-   docker build -t snapload-api .
-   ```
-
-2. **Run Container**
-   ```bash
-   docker run -d -p 8000:8000 \
-     -v $(pwd)/downloads:/app/downloads \
-     -v $(pwd)/logs:/app/logs \
-     -v $(pwd)/meta:/app/meta \
-     snapload-api
-   ```
-
-### Option 3: Docker Compose
-
-```bash
-docker-compose up -d
-```
-
-**Note**: The `docker-compose.yml` file is preconfigured with volume mounts and environment variables.
+- Install [Python 3.12+](https://www.python.org/downloads/)
+- Install [ffmpeg](https://www.gyan.dev/ffmpeg/builds/)
+- Add ffmpeg to PATH
 
 ---
 
 ## ⚙️ Configuration
 
-### Environment Variables
-
-Create a `.env` file in the project root:
+Configuration is managed via environment variables in `.env` file:
 
 ```bash
-# Server Configuration
-HOST=0.0.0.0
-PORT=8000
-WORKERS=1
+# Cleanup Configuration (Important for VPS/Limited Storage)
+RETENTION_HOURS=3                    # Keep files for 3 hours
+TEMP_RETENTION_HOURS=0.5             # Clean temp files after 30 minutes
+CLEANUP_SCHEDULE_ENABLED=true        # Enable automatic cleanup
+CLEANUP_CRON="0 * * * *"             # Clean every hour
+TEMP_CLEANUP_CRON="0 */2 * * *"      # Clean temp every 2 hours
 
-# Paths (relative to project root)
-DOWNLOADS_DIR=./downloads
-LOGS_DIR=./logs
-META_DIR=./meta
-TMP_DIR=./tmp
+# Admin Endpoints (Disable in production)
+ENABLE_ADMIN_ENDPOINTS=false         # Set to true only for testing/development
 
-# CORS Configuration
-CORS_ORIGINS=http://localhost:3000,http://localhost:9023
+# Logging
+CLEANUP_LOG_LEVEL=INFO               # DEBUG, INFO, WARNING, ERROR
+CLEANUP_LOG_RETENTION_DAYS=7         # Keep cleanup logs for 7 days
 
-# Download Settings
-MAX_CONCURRENT_JOBS=5
-CLEANUP_ON_SHUTDOWN=true
+# Testing Mode
+CLEANUP_DRY_RUN=false                # Set to true to simulate without deleting
 ```
 
-### Directory Structure
+### Configuration Presets
 
-The API automatically creates these directories:
-
+**Development (Fast Cleanup for Testing):**
+```bash
+RETENTION_HOURS=0.08              # 5 minutes
+CLEANUP_CRON="*/5 * * * *"        # Every 5 minutes
+ENABLE_ADMIN_ENDPOINTS=true
+CLEANUP_DRY_RUN=true              # Simulate only
 ```
-CCAPI/
-├── downloads/          # Final downloaded files
-│   ├── audio/         # Audio files (mp3, m4a)
-│   └── video/         # Video files (mp4)
-├── logs/              # Download logs
-│   ├── spotify/       # Spotify download logs
-│   └── yt/           # YouTube download logs
-├── meta/              # Job metadata (JSON)
-└── tmp/               # Temporary files during download
-    ├── archives/
-    ├── spotify/
-    └── yt/
+
+**Production (Recommended for VPS):**
+```bash
+RETENTION_HOURS=3                 # 3 hours
+CLEANUP_CRON="0 * * * *"          # Every hour
+ENABLE_ADMIN_ENDPOINTS=false
+```
+
+**Production (More Storage Available):**
+```bash
+RETENTION_HOURS=24                # 24 hours
+CLEANUP_CRON="0 */6 * * *"        # Every 6 hours
+ENABLE_ADMIN_ENDPOINTS=false
 ```
 
 ---
 
-## 📡 API Reference
+## 🔌 API Reference
 
 ### Base URL
-
 ```
 http://localhost:8000
 ```
 
 ### Endpoints
 
-#### 1. Health Check
-
-**GET** `/health`
-
-Check API health status.
+#### 🏥 Health Check
+```http
+GET /health
+```
 
 **Response:**
 ```json
 {
   "status": "healthy",
-  "version": "1.0.0",
-  "timestamp": "2025-11-28T12:00:00Z"
+  "timestamp": "2025-12-01T12:00:00Z",
+  "binaries": {
+    "yt-dlp": "available",
+    "spotdl": "available",
+    "ffmpeg": "available"
+  }
 }
 ```
 
 ---
 
-#### 2. Download Media
-
-**POST** `/download`
-
-Enqueue a new download job.
+#### 📥 Download Media
+```http
+POST /download
+Content-Type: application/json
+```
 
 **Request Body:**
 ```json
 {
   "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-  "type": "audio"  // "audio" | "video" | null
+  "quality": "192"  // "128", "192", "256", "320" for audio
 }
 ```
-
-**Supported URLs:**
-- YouTube: `youtube.com`, `youtu.be`, `music.youtube.com`
-- Spotify: `open.spotify.com`, `spotify:track:...`
-- 1000+ other sites supported by yt-dlp
 
 **Response:**
 ```json
 {
-  "message": "Descarga encolada",
-  "job_id": "a1b2c3d4",
-  "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+  "job_id": "abc123",
+  "status": "queued",
+  "message": "Download queued successfully"
 }
 ```
 
-**Status Codes:**
-- `202 Accepted`: Job enqueued successfully
-- `400 Bad Request`: Invalid URL or parameters
-- `500 Internal Server Error`: Server error
-
-**Example with curl:**
-```bash
-curl -X POST http://localhost:8000/download \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ","type":"audio"}'
-```
+**Quality Options:**
+- Audio: `"128"`, `"192"` (default), `"256"`, `"320"` (kbps)
+- Video: `"480"`, `"720"`, `"1080"`, `"1440"`, `"2160"`
 
 ---
 
-#### 3. Get Job Status
-
-**GET** `/status/{job_id}`
-
-Get lightweight status of a job.
+#### 📊 Check Job Status
+```http
+GET /status/{job_id}
+```
 
 **Response:**
 ```json
 {
-  "job_id": "a1b2c3d4",
-  "status": "running"  // "queued" | "running" | "success" | "failed"
+  "job_id": "abc123",
+  "status": "success",  // queued, running, success, failed, cancelled
+  "message": "Download completed",
+  "meta": {
+    "title": "Video Title",
+    "artist": "Artist Name",
+    "duration": "3:45",
+    "progress": 100
+  }
 }
 ```
 
-**Alternative Endpoint:** `GET /download/{job_id}/status`
-
-**Status Codes:**
-- `200 OK`: Status retrieved
-- `404 Not Found`: Job ID not found
+**Status Values:**
+- `queued`: Job waiting to start
+- `running`: Download in progress
+- `success`: Completed successfully
+- `failed`: Error occurred
+- `cancelled`: User cancelled
 
 ---
 
-#### 4. Get Job Metadata
-
-**GET** `/meta/{job_id}`
-
-Get complete metadata for a job.
+#### 📂 List Files
+```http
+GET /files/{job_id}
+```
 
 **Response:**
 ```json
 {
-  "job_id": "a1b2c3d4",
-  "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-  "type": "audio",
-  "status": "success",
-  "created_at": "2025-11-28T12:00:00Z",
-  "started_at": "2025-11-28T12:00:05Z",
-  "completed_at": "2025-11-28T12:01:30Z",
+  "job_id": "abc123",
   "files": [
     {
-      "path": "downloads/audio/Rick Astley - Never Gonna Give You Up.mp3",
-      "size": 3245678,
-      "format": "mp3"
+      "name": "Artist - Song.mp3",
+      "size_bytes": 4567890,
+      "size_mb": 4.36
     }
-  ],
-  "log_path": "logs/yt/a1b2c3d4/job-a1b2c3d4.log",
-  "error": null,
-  "output_truncated": "Download progress: 100%..."
+  ]
 }
 ```
 
-**Status Codes:**
-- `200 OK`: Metadata retrieved
-- `404 Not Found`: Job ID not found
+---
+
+#### 💾 Download File
+```http
+GET /files/{job_id}/download/{filename}
+```
+
+Downloads the specified file.
 
 ---
 
-#### 5. Cancel Job
+#### 📦 Download Archive (Playlists/Albums)
+```http
+GET /files/{job_id}/archive
+```
 
-**POST** `/cancel/{job_id}`
+Downloads all files as a ZIP archive (for playlists/albums with multiple tracks).
 
-Cancel a running download job.
+---
+
+#### ❌ Cancel Job
+```http
+POST /cancel/{job_id}
+```
 
 **Response:**
 ```json
 {
-  "message": "Job a1b2c3d4 cancelled successfully",
-  "job_id": "a1b2c3d4",
-  "status": "cancelled"
-}
-```
-
-**Status Codes:**
-- `200 OK`: Job cancelled successfully
-- `404 Not Found`: Job ID not found
-- `400 Bad Request`: Job already completed or not running
-
----
-
-#### 6. List Files
-
-**GET** `/files`
-
-List all downloaded files (future endpoint).
-
----
-
-### Error Responses
-
-All errors follow this structure:
-
-```json
-{
-  "detail": "Error description",
-  "job_id": "a1b2c3d4",  // if applicable
-  "timestamp": "2025-11-28T12:00:00Z"
+  "job_id": "abc123",
+  "status": "cancelled",
+  "message": "Job cancelled successfully"
 }
 ```
 
 ---
 
-## 🔄 Job Lifecycle
+### Admin Endpoints (Development Only)
 
-### Status Progression
+Enable with `ENABLE_ADMIN_ENDPOINTS=true` in `.env`:
 
+#### 🧹 Trigger Cleanup
+```http
+POST /admin/cleanup/trigger
+Content-Type: application/json
 ```
-┌─────────┐
-│ queued  │  Job created, waiting for processing
-└────┬────┘
-     │
-     ▼
-┌─────────┐
-│ running │  Download in progress
-└────┬────┘
-     │
-     ├─────────┐
-     ▼         ▼
-┌─────────┐ ┌────────┐
-│ success │ │ failed │
-└─────────┘ └────────┘
-     │         │
-     ▼         ▼
-   (Cancelled status via /cancel)
-```
-
-### Status Determination Logic
-
-The API determines job status by checking:
-
-1. **Metadata file exists** (`meta/meta-{job_id}.json`)
-   - Contains `status` field
-2. **Log file exists** (`logs/{platform}/{job_id}/job-{job_id}.log`)
-3. **Files downloaded** (presence in `downloads/` directory)
-
-**Status Priority:**
-- `failed`: Error in metadata or log indicates failure
-- `success`: Files exist in downloads directory
-- `running`: Log file exists but no files yet
-- `queued`: Metadata exists but no log file
-
----
-
-## 📂 File Structure
-
-### Generated Files
-
-#### Metadata File (`meta/meta-{job_id}.json`)
-
-```json
-{
-  "job_id": "a1b2c3d4",
-  "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-  "type": "audio",
-  "status": "success",
-  "created_at": "2025-11-28T12:00:00.000Z",
-  "started_at": "2025-11-28T12:00:05.123Z",
-  "completed_at": "2025-11-28T12:01:30.456Z",
-  "files": [
-    {
-      "path": "downloads/audio/Rick Astley - Never Gonna Give You Up.mp3",
-      "size": 3245678,
-      "format": "mp3",
-      "title": "Rick Astley - Never Gonna Give You Up",
-      "artist": "Rick Astley",
-      "duration": 213
-    }
-  ],
-  "log_path": "logs/yt/a1b2c3d4/job-a1b2c3d4.log",
-  "error": null,
-  "output_truncated": "First and last 500 chars of download output..."
-}
-```
-
-#### Log File (`logs/{platform}/{job_id}/job-{job_id}.log`)
-
-Contains complete stdout/stderr from yt-dlp or spotdl:
-
-```
-[youtube] dQw4w9WgXcQ: Downloading webpage
-[youtube] dQw4w9WgXcQ: Downloading android player API JSON
-[info] dQw4w9WgXcQ: Downloading 1 format(s): 251
-[download] Destination: Rick Astley - Never Gonna Give You Up.webm
-[download] 100% of 3.09MiB in 00:02
-[ExtractAudio] Destination: Rick Astley - Never Gonna Give You Up.mp3
-Deleting original file Rick Astley - Never Gonna Give You Up.webm
-```
-
----
-
-## ⚠️ Error Handling
-
-### Common Error Scenarios
-
-#### 1. Invalid URL
 
 **Request:**
 ```json
 {
-  "url": "https://invalid-site.com/video",
-  "type": "audio"
+  "targets": ["all"],  // "downloads", "logs", "metadata", "temp", "database", "all"
+  "strategy": "age_based",
+  "dry_run": false
 }
 ```
 
-**Response:**
-```json
-{
-  "detail": "URL not supported. Only YouTube and Spotify URLs are allowed."
-}
+---
+
+#### 📊 Storage Stats
+```http
+GET /admin/storage/stats
 ```
 
-#### 2. Download Failure
+---
 
-**Metadata:**
-```json
-{
-  "status": "failed",
-  "error": "ERROR: Video unavailable",
-  "output_truncated": "..."
-}
+#### ⏰ Cleanup Schedule
+```http
+GET /admin/cleanup/schedule
 ```
 
-#### 3. Job Not Found
+---
 
-**Response:**
-```json
-{
-  "detail": "Job ID not found: invalid-id"
-}
+#### ⚙️ Cleanup Config
+```http
+GET /admin/cleanup/config
 ```
 
-### Error Recovery
+---
 
-- **Retry Logic**: Frontend should implement exponential backoff
-- **Log Analysis**: Check log files for detailed error information
-- **Metadata Review**: Error details stored in metadata file
+## 🗂️ Storage Management
+
+SnapLoad includes an automatic cleanup system designed for resource-constrained servers.
+
+### How It Works
+
+1. **Age-Based Cleanup**: Files older than `RETENTION_HOURS` are deleted
+2. **Scheduled Execution**: Runs automatically based on `CLEANUP_CRON`
+3. **Comprehensive**: Cleans downloads, logs, metadata, temp files, and database entries
+4. **Safe**: Only removes completed/failed jobs, never active downloads
+
+### Directory Structure
+
+```
+snapLoad-API/
+├── downloads/          # Downloaded media files
+│   ├── audio/         # Audio files organized by quality
+│   └── video/         # Video files organized by format
+├── logs/              # Download and cleanup logs
+│   ├── cleanup/       # Cleanup operation logs
+│   ├── spotify/       # Spotify download logs
+│   └── yt/            # YouTube download logs
+├── meta/              # Job metadata (JSON)
+└── tmp/               # Temporary files during processing
+    ├── archives/      # Temporary ZIP files
+    ├── spotify/       # Spotify temp files
+    └── yt/            # YouTube temp files
+```
+
+### Manual Cleanup
+
+```bash
+# Trigger cleanup via API (with admin endpoints enabled)
+curl -X POST http://localhost:8000/admin/cleanup/trigger \
+  -H "Content-Type: application/json" \
+  -d '{"targets": ["all"], "dry_run": false}'
+
+# Check storage stats
+curl http://localhost:8000/admin/storage/stats
+```
 
 ---
 
@@ -580,350 +446,280 @@ Deleting original file Rick Astley - Never Gonna Give You Up.webm
 ### Project Structure
 
 ```
-CCAPI/
+snapLoad-API/
 ├── app/
-│   ├── api.py              # FastAPI application
-│   ├── models.py           # Pydantic models
-│   ├── utils.py            # Utility functions
-│   ├── job_registry.py     # Job tracking
-│   ├── controllers/
-│   │   ├── sd_controller.py  # Spotify downloads
-│   │   └── yt_controller.py  # YouTube downloads
-│   └── routes/
-│       ├── download.py     # Download endpoints
-│       ├── files.py        # File management
-│       └── health.py       # Health checks
-├── main.py                 # Application entry point
-├── pyproject.toml          # Project dependencies
-├── Dockerfile              # Container image
-└── docker-compose.yml      # Docker orchestration
+│   ├── api.py                  # FastAPI app and lifespan
+│   ├── routes/                 # API endpoints
+│   │   ├── download.py         # Download endpoints
+│   │   ├── files.py            # File management
+│   │   ├── health.py           # Health checks
+│   │   └── admin.py            # Admin endpoints (optional)
+│   ├── services/               # Business logic
+│   │   ├── base_download_service.py
+│   │   ├── spotify_service.py
+│   │   ├── youtube_service.py
+│   │   ├── download_orchestrator.py
+│   │   └── cleanup_service.py
+│   ├── managers/               # Background tasks
+│   │   ├── job_manager.py
+│   │   ├── file_manager.py
+│   │   └── cleanup_scheduler.py
+│   ├── storage/                # Data persistence
+│   │   ├── index.py            # SQLite job index
+│   │   └── media.py            # File system operations
+│   ├── core/                   # Configuration and constants
+│   │   ├── config.py
+│   │   ├── enums.py
+│   │   ├── constants.py
+│   │   └── exceptions.py
+│   ├── schemas.py              # Pydantic models
+│   ├── repositories.py         # Data access layer
+│   └── validators.py           # Input validation
+├── main.py                     # Entry point
+├── pyproject.toml              # Dependencies (uv)
+├── .env.example                # Configuration template
+└── README.md
 ```
 
 ### Running Tests
 
 ```bash
-# Install dev dependencies
-pip install pytest pytest-asyncio httpx
+# Manual testing with admin endpoints
+cp .env.example .env
+# Set ENABLE_ADMIN_ENDPOINTS=true
+# Set RETENTION_HOURS=0.08 (5 minutes) for quick testing
+# Set CLEANUP_CRON="*/5 * * * *"
 
-# Run tests
-pytest tests/ -v
+uv run python main.py
 
-# Run with coverage
-pytest tests/ --cov=app --cov-report=html
+# In another terminal
+./test_env.sh  # Verifies env variables are loaded correctly
 ```
 
 ### Code Style
 
-```bash
-# Install formatting tools
-pip install black isort flake8
-
-# Format code
-black app/
-isort app/
-
-# Lint
-flake8 app/
-```
-
-### Hot Reload
-
-Development server with auto-reload:
-
-```bash
-uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
-```
+The project follows:
+- **Type hints** for all functions
+- **Docstrings** for public APIs
+- **Async/await** for I/O operations
+- **Repository pattern** for data access
+- **Service layer** for business logic
 
 ---
 
-## 🚢 Deployment
+## 🐳 Docker Deployment
 
-### Production Recommendations
-
-#### 1. Use Gunicorn + Uvicorn
+### Quick Start
 
 ```bash
-pip install gunicorn
-gunicorn app.api:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+# Build and run
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop container
+docker-compose down
 ```
 
-#### 2. Environment Variables
+The API will be available at `http://localhost:8000`
+
+### Using Docker without Compose
 
 ```bash
-# Production settings
-export ENV=production
-export WORKERS=4
-export LOG_LEVEL=warning
-```
-
-#### 3. Reverse Proxy (Nginx)
-
-```nginx
-server {
-    listen 80;
-    server_name api.snapload.example.com;
-
-    location / {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-#### 4. SSL/TLS
-
-```bash
-# Using Certbot
-sudo certbot --nginx -d api.snapload.example.com
-```
-
-#### 5. Docker Production
-
-```bash
+# Build image
 docker build -t snapload-api:latest .
+
+# Run container
 docker run -d \
   --name snapload-api \
-  --restart unless-stopped \
   -p 8000:8000 \
-  -v /data/downloads:/app/downloads \
-  -v /data/logs:/app/logs \
-  -v /data/meta:/app/meta \
+  -v $(pwd)/downloads:/app/downloads \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/meta:/app/meta \
+  -v $(pwd)/tmp:/app/tmp \
+  -e RETENTION_HOURS=3 \
+  -e CLEANUP_CRON="0 * * * *" \
+  -e ENABLE_ADMIN_ENDPOINTS=false \
   snapload-api:latest
 ```
 
-### Performance Tuning
+### Docker Configuration
 
-- **Workers**: Set to `2 * CPU_CORES + 1`
-- **Concurrency**: Limit concurrent downloads based on system resources
-- **Disk Cleanup**: Implement periodic cleanup of old files
-- **Log Rotation**: Use logrotate for log management
+The `docker-compose.yml` provides a production-ready setup:
+
+```yaml
+services:
+  snapload-api:
+    container_name: snapload-api
+    build: .
+    image: snapload-api:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - WORKERS=1
+      - RETENTION_HOURS=3
+      - CLEANUP_CRON=0 * * * *
+      - ENABLE_ADMIN_ENDPOINTS=false
+    volumes:
+      - ./downloads:/app/downloads
+      - ./logs:/app/logs
+      - ./meta:/app/meta
+      - ./tmp:/app/tmp
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+```
+
+### Environment Variables for Docker
+
+Create a `.env` file or set environment variables in `docker-compose.yml`:
+
+```bash
+# Server Configuration
+PORT=8000
+WORKERS=1
+
+# Cleanup Configuration (Production Defaults)
+RETENTION_HOURS=3              # Keep files for 3 hours
+CLEANUP_CRON="0 * * * *"       # Clean every hour
+ENABLE_ADMIN_ENDPOINTS=false   # Disable admin endpoints in production
+
+# Logging
+CLEANUP_LOG_LEVEL=INFO
+```
+
+### Building for Production
+
+```bash
+# Build image
+docker build -t snapload-api:latest .
+
+# Run container
+docker run -d \
+  --name snapload-api \
+  -p 8000:8000 \
+  -v $(pwd)/downloads:/app/downloads \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/meta:/app/meta \
+  -v $(pwd)/tmp:/app/tmp \
+  -e RETENTION_HOURS=3 \
+  -e CLEANUP_CRON="0 * * * *" \
+  snapload-api:latest
+```
+
+### Multi-Stage Dockerfile
+
+The `Dockerfile` uses Python 3.12-slim with optimized caching:
+
+- **Stage 1**: Install system dependencies (ffmpeg, curl)
+- **Stage 2**: Install Python packages with `uv` for speed
+- **Stage 3**: Copy application code and set permissions
+- **Health Check**: `/health` endpoint monitoring
+
+Key features:
+- Non-root user (`appuser`)
+- Persistent volumes for downloads/logs/meta/tmp
+- Health check with curl
+- Optimized layer caching for faster builds
 
 ---
 
-## 🔒 Security Considerations
-
-### ⚠️ Important Security Notes
-
-**This API is designed for LOCAL USE ONLY and does not include authentication by default.**
-
-If you need to expose this API beyond your local network:
-
-1. **Add Authentication**
-   - Implement API keys or JWT tokens
-   - Use FastAPI dependencies for auth
-   ```python
-   from fastapi import Depends, HTTPException, Security
-   from fastapi.security import APIKeyHeader
-   
-   api_key_header = APIKeyHeader(name="X-API-Key")
-   
-   async def verify_api_key(api_key: str = Security(api_key_header)):
-       if api_key != os.getenv("API_KEY"):
-           raise HTTPException(status_code=403, detail="Invalid API Key")
-   ```
-
-2. **Use HTTPS**
-   - Never expose over plain HTTP
-   - Use reverse proxy (Nginx) with TLS
-   - Obtain SSL certificate (Let's Encrypt)
-
-3. **Rate Limiting**
-   ```python
-   from slowapi import Limiter, _rate_limit_exceeded_handler
-   from slowapi.util import get_remote_address
-   
-   limiter = Limiter(key_func=get_remote_address)
-   app.state.limiter = limiter
-   
-   @app.post("/download")
-   @limiter.limit("10/minute")
-   async def download_endpoint(request: Request, ...):
-       ...
-   ```
-
-4. **Input Validation**
-   - URL whitelist/blacklist
-   - File size limits
-   - Timeout limits
-
-5. **CORS Configuration**
-   ```python
-   from fastapi.middleware.cors import CORSMiddleware
-   
-   app.add_middleware(
-       CORSMiddleware,
-       allow_origins=["https://your-frontend.com"],
-       allow_credentials=True,
-       allow_methods=["GET", "POST"],
-       allow_headers=["*"],
-   )
-   ```
-
-6. **Resource Limits**
-   - Implement max concurrent jobs
-   - Disk space monitoring
-   - Memory usage limits
-
----
-
-## 🐛 Troubleshooting
+## 🔧 Troubleshooting
 
 ### Common Issues
 
-#### 1. ffmpeg not found
-
-**Error:**
-```
-ERROR: ffmpeg not found. Please install ffmpeg
-```
-
-**Solution:**
+**1. "Binary not found" error**
 ```bash
-# Linux
-sudo apt install ffmpeg
+# Verify binaries are installed
+which yt-dlp spotdl ffmpeg
 
-# macOS
-brew install ffmpeg
-
-# Verify installation
-ffmpeg -version
+# Install missing binaries
+pip install yt-dlp spotdl
+brew install ffmpeg  # or apt-get install ffmpeg
 ```
 
-#### 2. Permission Denied
-
-**Error:**
+**2. "Jobs are being missed" (scheduler warnings)**
 ```
-PermissionError: [Errno 13] Permission denied: 'downloads/'
+Solution: This is normal behavior. The scheduler combines missed executions.
+The cleanup will still run, just slightly delayed.
 ```
 
-**Solution:**
+**3. Downloads fail with "403 Forbidden"**
 ```bash
-# Check directory permissions
-ls -la downloads/
-
-# Fix permissions
-chmod -R 755 downloads/ logs/ meta/ tmp/
+# Update yt-dlp to latest version
+pip install --upgrade yt-dlp
 ```
 
-#### 3. Download Stuck in "running"
-
-**Possible Causes:**
-- Process crashed without updating metadata
-- Network timeout
-- Disk full
-
-**Solution:**
+**4. Cleanup not working**
 ```bash
-# Check logs
-cat logs/{platform}/{job_id}/job-{job_id}.log
+# Check configuration is loaded
+curl http://localhost:8000/admin/cleanup/config
 
-# Check disk space
-df -h
-
-# Cancel job via API
-curl -X POST http://localhost:8000/cancel/{job_id}
+# Verify CLEANUP_SCHEDULE_ENABLED=true in .env
+# Restart server after changing .env
 ```
 
-#### 4. Port Already in Use
-
-**Error:**
-```
-OSError: [Errno 48] Address already in use
-```
-
-**Solution:**
+**5. Files not being cleaned after retention time**
 ```bash
-# Find process using port 8000
-lsof -i :8000
-
-# Kill process
-kill -9 <PID>
-
-# Or use different port
-uvicorn app.api:app --port 8001
-```
-
-#### 5. Docker Container Exits Immediately
-
-**Solution:**
-```bash
-# Check logs
-docker logs <container_id>
-
-# Run with debug
-docker run -it snapload-api bash
-python main.py
+# Files are cleaned on the next scheduled run, not exactly at retention time
+# If RETENTION_HOURS=3 and CLEANUP_CRON="0 * * * *":
+#   - File created at 10:30
+#   - Becomes old at 13:30  
+#   - Will be deleted at 14:00 (next hourly run)
 ```
 
 ### Debug Mode
 
-Enable debug logging:
-
-```python
-# In main.py or api.py
-import logging
-logging.basicConfig(level=logging.DEBUG)
-```
-
-### Health Diagnostics
+Enable detailed logging:
 
 ```bash
-# Check API health
-curl http://localhost:8000/health
+# In .env
+CLEANUP_LOG_LEVEL=DEBUG
+ENABLE_ADMIN_ENDPOINTS=true
+```
 
-# Check if services are running
-ps aux | grep uvicorn
-
-# Check disk usage
-du -sh downloads/ logs/ meta/ tmp/
+Check logs:
+```bash
+tail -f logs/cleanup/cleanup-*.log
 ```
 
 ---
 
 ## ⚖️ Legal Disclaimer
 
-**IMPORTANT LEGAL NOTICE**
+**IMPORTANT**: This software is provided for educational and personal use only.
 
-This software is provided for **educational and personal use only**. Users are **solely responsible** for ensuring their use complies with applicable laws and the terms of service of content platforms.
+- ✅ **Permitted**: Downloading content you own or have permission to download
+- ✅ **Permitted**: Archiving content for personal, non-commercial use
+- ❌ **Prohibited**: Downloading copyrighted content without authorization
+- ❌ **Prohibited**: Commercial use or redistribution of downloaded content
+- ❌ **Prohibited**: Violating platform Terms of Service
 
-### User Responsibilities
+**Users are solely responsible** for ensuring their use complies with:
+- Copyright laws in their jurisdiction
+- Platform Terms of Service (YouTube, Spotify, etc.)
+- Local regulations regarding media downloads
 
-- ✅ **You must have the legal right** to download content
-- ✅ **Respect copyright laws** in your jurisdiction
-- ✅ **Follow platform Terms of Service** (YouTube, Spotify, etc.)
-- ✅ **Use for personal, non-commercial purposes only**
+The developers assume **no liability** for misuse of this software.
 
-### Prohibited Uses
+### Responsible Use Guidelines
 
-- ❌ Downloading copyrighted content without permission
-- ❌ Commercial redistribution of downloaded content
-- ❌ Bypassing technological protection measures
-- ❌ Violating platform Terms of Service
-- ❌ Any illegal activity
-
-### No Warranty
-
-This software is provided "AS IS" without warranty of any kind. The authors are not responsible for misuse, legal consequences, or damages resulting from use of this software.
-
-By using SnapLoad API, you acknowledge and accept full responsibility for your actions and agree to use this tool in compliance with all applicable laws and regulations.
+1. Only download content you have rights to
+2. Respect copyright and intellectual property
+3. Do not redistribute downloaded content
+4. Use for personal, educational, or archival purposes only
+5. Support content creators through official channels
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please follow these guidelines:
-
-### Reporting Issues
-
-1. Check existing issues first
-2. Provide detailed description
-3. Include system information (OS, Python version)
-4. Attach relevant logs or error messages
-
-### Pull Requests
+Contributions are welcome! Please:
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -931,13 +727,16 @@ Contributions are welcome! Please follow these guidelines:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-### Code Guidelines
+### Development Setup
 
-- Follow PEP 8 style guide
-- Add type hints
-- Include docstrings
-- Write tests for new features
-- Update documentation
+```bash
+git clone https://github.com/pabrax/SnapLoad.git
+cd SnapLoad/snapLoad-API
+uv sync
+cp .env.example .env
+# Edit .env for development
+uv run python main.py
+```
 
 ---
 
@@ -945,42 +744,35 @@ Contributions are welcome! Please follow these guidelines:
 
 This project is licensed under the **MIT License** - see the [LICENSE](../LICENSE) file for details.
 
-### MIT License Summary
+### Third-Party Dependencies
 
-- ✅ Commercial use allowed
-- ✅ Modification allowed
-- ✅ Distribution allowed
-- ✅ Private use allowed
-- ⚠️ License and copyright notice required
-- ⚠️ No liability or warranty
+This project uses:
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - Unlicense
+- [spotdl](https://github.com/spotDL/spotify-downloader) - MIT License
+- [FastAPI](https://github.com/tiangolo/fastapi) - MIT License
+- [ffmpeg](https://ffmpeg.org/) - LGPL/GPL
+
+---
+
+## 🔗 Related Projects
+
+- **[SnapLoad UI](https://github.com/pabrax/SnapLoad/tree/main/snapLoad-UI)** - Official web client (Next.js)
+- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** - YouTube downloader
+- **[spotdl](https://github.com/spotDL/spotify-downloader)** - Spotify downloader
 
 ---
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/pabrax/LocalSongs/issues)
-- **Documentation**: This README
-- **Logs**: Check `logs/` directory for detailed error information
-
----
-
-## 🙏 Acknowledgments
-
-This project is built on top of excellent open-source tools:
-
-- [FastAPI](https://fastapi.tiangolo.com/) - Modern web framework
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - YouTube downloader
-- [spotdl](https://github.com/spotDL/spotify-downloader) - Spotify downloader
-- [ffmpeg](https://ffmpeg.org/) - Media processing
-- [uvicorn](https://www.uvicorn.org/) - ASGI server
+- 🐛 [Report Issues](https://github.com/pabrax/SnapLoad/issues)
+- 💬 [Discussions](https://github.com/pabrax/SnapLoad/discussions)
 
 ---
 
 <div align="center">
 
-**Made with ❤️ for the SnapLoad Project**
+Made with ❤️ by [pabrax](https://github.com/pabrax)
 
-[⬆ Back to Top](#-snapload-api)
+⭐ Star this repo if you find it useful!
 
 </div>
-

@@ -36,3 +36,19 @@ class CacheStatus(str, Enum):
     HIT = "ready"
     MISS = "miss"
     PENDING = "pending"
+
+
+class CleanupTarget(str, Enum):
+    """Objetivos de limpieza."""
+    DOWNLOADS = "downloads"
+    LOGS = "logs"
+    METADATA = "metadata"
+    TEMP = "temp"
+    DATABASE = "database"
+    ALL = "all"
+
+
+class CleanupStrategy(str, Enum):
+    """Estrategias de limpieza."""
+    AGE_BASED = "age_based"
+    ORPHAN = "orphan"

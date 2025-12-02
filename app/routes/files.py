@@ -58,13 +58,10 @@ def _serve_file_response(job_id: str, filename: str):
     Función interna para servir un archivo.
     Compartida entre /files/{job_id}/{filename} y /files/{job_id}/download/{filename}.
     """
-    # Obtener metadata
     metadata = metadata_manager.read_metadata(job_id)
     
-    # Buscar el archivo en la metadata
     target_file = None
     for f in metadata.files:
-        # Manejar tanto FileInfo objects como dicts
         file_name = f.name if hasattr(f, 'name') else f.get('name', '')
         if file_name == filename:
             target_file = f

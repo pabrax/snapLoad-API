@@ -1,24 +1,28 @@
 version: "3.8"
 
 services:
-  ccapi:
+  snapload-api:
+    container_name: snapload-api
     build: .
-    image: ccapi:latest
+    image: snapload-api:latest
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
       - PORT=8000
       - WORKERS=1
+      - RETENTION_HOURS=3
+      - CLEANUP_CRON=0 * * * *
+      - ENABLE_ADMIN_ENDPOINTS=false
+    env_file:
+      - .env
     volumes:
       - ./downloads:/app/downloads
       - ./logs:/app/logs
       - ./meta:/app/meta
       - ./tmp:/app/tmp
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-
-# Optional: you can add other services (e.g., a reverse proxy) if needed.

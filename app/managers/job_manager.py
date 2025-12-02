@@ -164,29 +164,3 @@ class JobManager:
 
 # Instancia global del gestor
 job_manager = JobManager()
-
-
-# Funciones de compatibilidad con la API anterior
-def register_job(job_id: str, process: Popen) -> None:
-    """Registra un job (función de compatibilidad)."""
-    job_manager.register_job(job_id, process)
-
-
-def unregister_job(job_id: str) -> None:
-    """Elimina un job del registro (función de compatibilidad)."""
-    job_manager.unregister_job(job_id)
-
-
-def get_job_proc(job_id: str) -> Optional[Popen]:
-    """Obtiene el proceso de un job (función de compatibilidad)."""
-    return job_manager.get_job_process(job_id)
-
-
-def terminate_job(job_id: str, timeout: float = 5.0) -> bool:
-    """Termina un job (función de compatibilidad)."""
-    return job_manager.terminate_job(job_id, timeout)
-
-
-def terminate_all() -> None:
-    """Termina todos los jobs (función de compatibilidad)."""
-    job_manager.terminate_all()

@@ -2,6 +2,7 @@
 Configuración centralizada de la aplicación.
 Este módulo contiene todas las configuraciones del proyecto.
 """
+import os
 from pathlib import Path
 from typing import Set
 
@@ -43,4 +44,31 @@ class Settings:
     }
 
 
+class CleanupSettings:
+    """Configuración del sistema de limpieza y optimización."""
+    
+    # Directorio de logs de limpieza
+    CLEANUP_LOG_DIR: Path = Settings.BASE_DIR / "logs" / "cleanup"
+    
+    # Política de retención (en horas) - acepta decimales para testing
+    RETENTION_HOURS: float = float(os.getenv("RETENTION_HOURS", "24"))
+    TEMP_RETENTION_HOURS: float = float(os.getenv("TEMP_RETENTION_HOURS", "1"))
+    
+    # Programación automática
+    CLEANUP_SCHEDULE_ENABLED: bool = os.getenv("CLEANUP_SCHEDULE_ENABLED", "true").lower() == "true"
+    CLEANUP_CRON: str = os.getenv("CLEANUP_CRON", "0 */6 * * *")  # Cada 6 horas
+    TEMP_CLEANUP_CRON: str = os.getenv("TEMP_CLEANUP_CRON", "0 * * * *")  # Cada hora
+    
+    # Endpoints admin (solo en desarrollo/testing)
+    ENABLE_ADMIN_ENDPOINTS: bool = os.getenv("ENABLE_ADMIN_ENDPOINTS", "false").lower() == "true"
+    
+    # Logging
+    CLEANUP_LOG_LEVEL: str = os.getenv("CLEANUP_LOG_LEVEL", "INFO")
+    CLEANUP_LOG_RETENTION_DAYS: int = int(os.getenv("CLEANUP_LOG_RETENTION_DAYS", "7"))
+    
+    # Dry-run para testing
+    CLEANUP_DRY_RUN: bool = os.getenv("CLEANUP_DRY_RUN", "false").lower() == "true"
+
+
 settings = Settings()
+cleanup_settings = CleanupSettings()

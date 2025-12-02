@@ -27,17 +27,14 @@ def lookup_endpoint(url: str, type: str = "audio", quality: str = None, format: 
     Retorna estado: ready (disponible), pending (en progreso), miss (no existe).
     """
     try:
-        # Validar parámetros
         if not url:
             raise HTTPException(status_code=400, detail="URL requerida")
         
-        # Validar URL
         try:
-            URLValidator.validate_url(url)  # Valida que sea Spotify o YouTube
+            URLValidator.validate_url(url)
         except InvalidURLException as e:
             raise HTTPException(status_code=400, detail=str(e))
         
-        # Validar quality si se proporciona
         normalized_quality = None
         if quality:
             try:
@@ -48,14 +45,11 @@ def lookup_endpoint(url: str, type: str = "audio", quality: str = None, format: 
             except InvalidQualityException as e:
                 raise HTTPException(status_code=400, detail=str(e))
         
-        # Validar format si se proporciona (solo para video)
         if format:
             try:
                 FormatValidator.validate_format(format)
             except InvalidFormatException as e:
                 raise HTTPException(status_code=400, detail=str(e))
-        
-        # Usar orchestrator para verificar disponibilidad
         result = download_orchestrator.check_availability(
             url=url,
             media_type=type,

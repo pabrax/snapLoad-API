@@ -177,3 +177,73 @@ class DownloadJob(BaseModel):
     format: Optional[str] = None
     status: JobStatus = JobStatus.PENDING
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# === Cleanup Models ===
+
+class CleanupStats(BaseModel):
+    """Estadísticas de limpieza para un target específico."""
+    target: str = Field(..., description="Objetivo de limpieza")
+    files_deleted: int = Field(..., description="Número de archivos eliminados")
+    space_freed_bytes: int = Field(..., description="Espacio liberado en bytes")
+    space_freed_mb: float = Field(..., description="Espacio liberado en MB")
+    duration_seconds: float = Field(..., description="Duración de la operación")
+    timestamp: str = Field(..., description="Timestamp de la operación")
+    dry_run: bool = Field(..., description="Si fue una simulación")
+    errors: List[str] = Field(default_factory=list, description="Errores encontrados")
+
+
+class CleanupRequest(BaseModel):
+    """Solicitud de limpieza manual."""
+    targets: List[str] = Field(
+        default=["all"],
+        description="Objetivos a limpiar: downloads, logs, metadata, temp, database, all"
+    )
+    strategy: str = Field(
+        default="age_based",
+        description="Estrategia: age_based, orphan"
+    )
+    dry_run: bool = Field(
+        default=False,
+        description="Si es True, solo simula sin eliminar"
+    )
+    force: bool = Field(
+        default=False,
+        description="Ignorar políticas de retención"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "targets": ["downloads", "logs"],
+                "strategy": "age_based",
+                "dry_run": True,
+                "force": False
+            }
+        }
+
+
+class CleanupSummary(BaseModel):
+    """Resumen completo de operación de limpieza."""
+    total_files_deleted: int = Field(..., description="Total de archivos eliminados")
+    total_space_freed_mb: float = Field(..., description="Espacio total liberado en MB")
+    targets_cleaned: List[CleanupStats] = Field(..., description="Estadísticas por target")
+    errors: List[str] = Field(default_factory=list, description="Errores generales")
+    timestamp: str = Field(..., description="Timestamp de inicio")
+    duration_seconds: float = Field(..., description="Duración total")
+    dry_run: bool = Field(..., description="Si fue una simulación")
+
+
+class StorageStats(BaseModel):
+    """Estadísticas de almacenamiento del servidor."""
+    downloads_size_mb: float = Field(..., description="Tamaño de downloads/ en MB")
+    downloads_file_count: int = Field(..., description="Cantidad de archivos en downloads/")
+    logs_size_mb: float = Field(..., description="Tamaño de logs/ en MB")
+    logs_dir_count: int = Field(..., description="Cantidad de directorios en logs/")
+    metadata_size_mb: float = Field(..., description="Tamaño de meta/ en MB")
+    metadata_file_count: int = Field(..., description="Cantidad de archivos en meta/")
+    temp_size_mb: float = Field(..., description="Tamaño de tmp/ en MB")
+    total_size_mb: float = Field(..., description="Tamaño total en MB")
+    database_size_mb: float = Field(..., description="Tamaño de la BD en MB")
+    db_record_count: int = Field(..., description="Cantidad de registros en BD")
+    timestamp: str = Field(..., description="Timestamp de la consulta")

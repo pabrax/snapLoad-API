@@ -82,7 +82,6 @@ class URLValidator:
         url = url.strip()
         
         if allowed_sources is None:
-            # Validar que sea al menos de una fuente conocida
             if not (URLValidator.is_spotify_url(url) or URLValidator.is_youtube_url(url)):
                 raise InvalidURLException(url=url, reason="URL no corresponde a Spotify o YouTube")
         else:
@@ -138,7 +137,6 @@ class QualityValidator:
         v = value.strip()
         lv = v.lower()
         
-        # Casos especiales
         if lv == "0":
             return {"spotdl": None, "ytdlp": "0"}
         if lv == "bestaudio":
@@ -152,7 +150,6 @@ class QualityValidator:
             ytd = f"{num}K"   # yt-dlp usa uppercase 'K'
             return {"spotdl": spot, "ytdlp": ytd}
         
-        # Fallback
         return {"spotdl": None, "ytdlp": lv}
     
     @staticmethod
