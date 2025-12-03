@@ -36,6 +36,12 @@ class Settings:
     APP_DESCRIPTION: str = "REST API for downloading media from YouTube and Spotify using yt-dlp and spotdl"
     APP_VERSION: str = "1.0.0"
     
+    # Server Configuration
+    HOST: str = os.getenv("HOST", "0.0.0.0")
+    PORT: int = int(os.getenv("PORT", "9020"))
+    RELOAD: bool = os.getenv("RELOAD", "false").lower() == "true"
+    WORKERS: int = int(os.getenv("WORKERS", "1"))
+    
     # Binarios requeridos
     REQUIRED_BINARIES: dict = {
         "yt-dlp": "yt-dlp",

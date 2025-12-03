@@ -1,11 +1,18 @@
 
 from dotenv import load_dotenv
 import uvicorn
+from app.core.config import settings
 
 if __name__ == "__main__":
     # Cargar variables de entorno desde .env
     load_dotenv()
     
-    # uvicorn.run("app.api:app", host="0.0.0.0", port=8000, reload=True) # for development
-    uvicorn.run("app.api:app", host="0.0.0.0", port=8000)
+    # Usar configuración centralizada
+    uvicorn.run(
+        "app.api:app",
+        host=settings.HOST,
+        port=settings.PORT,
+        reload=settings.RELOAD,
+        workers=settings.WORKERS if not settings.RELOAD else 1
+    )
 
