@@ -742,15 +742,18 @@ uv run python main.py
 
 ## 📄 License
 
-This project is licensed under the **MIT License** - see the [LICENSE](../LICENSE) file for details.
+This project is licensed under the **GPL-3.0 License** - see the [LICENSE](LICENSE) file for details.
 
-### Third-Party Dependencies
+### Third-Party Licenses
 
-This project uses:
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - Unlicense
-- [spotdl](https://github.com/spotDL/spotify-downloader) - MIT License
-- [FastAPI](https://github.com/tiangolo/fastapi) - MIT License
-- [ffmpeg](https://ffmpeg.org/) - LGPL/GPL
+This project uses third-party software that is subject to their own licenses:
+
+- **[spotdl](https://github.com/spotDL/spotify-downloader)** - MIT License (required attribution)
+- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** - Unlicense
+- **[FastAPI](https://github.com/tiangolo/fastapi)** - MIT License
+- **[ffmpeg](https://ffmpeg.org/)** - LGPL/GPL
+
+**Important:** spotdl is licensed under the MIT License, which requires that the copyright notice and license text be included in all copies or substantial portions of the software. The full text of the MIT License for spotdl and other third-party dependencies can be found in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ---
 

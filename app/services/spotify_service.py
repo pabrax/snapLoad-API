@@ -1,6 +1,11 @@
 """
 Servicio de descarga de Spotify.
 Implementa la descarga de audio desde Spotify usando spotdl.
+
+This module uses spotdl (https://github.com/spotDL/spotify-downloader)
+which is licensed under the MIT License.
+Copyright (c) 2024 spotDL
+See THIRD_PARTY_LICENSES.md for full license text.
 """
 from pathlib import Path
 from typing import List
