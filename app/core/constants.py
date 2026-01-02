@@ -42,3 +42,24 @@ SUCCESS_DOWNLOAD_PROGRESS = "Descarga ya en progreso"
 # Comandos externos
 YTDLP_AUDIO_EXTRACT_FORMAT = "mp3"
 YTDLP_BEST_VIDEO_FORMAT = "bestvideo+bestaudio/best"
+
+VIDEO_FORMAT_INFO = {
+    "mp4": {
+        "selector": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+        "codecs": "H.264 + AAC",
+        "description": "Universal, alta compatibilidad"
+    },
+    "webm": {
+        "selector": "bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio/best",
+        "codecs": "VP9 + Opus",
+        "description": "Optimizado para web"
+    },
+    "mkv": {
+        "selector": "bestvideo+bestaudio/best",
+        "codecs": "Universal (todos)",
+        "description": "Contenedor flexible, máxima calidad"
+    }
+}
+
+# Formatos de video permitidos
+ALLOWED_VIDEO_FORMATS = ["mp4", "webm", "mkv"]

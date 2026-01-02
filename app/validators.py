@@ -13,6 +13,7 @@ from .core.constants import (
 )
 from .core.config import settings
 from .core.exceptions import InvalidURLException, InvalidQualityException, InvalidFormatException
+from .core.constants import ALLOWED_VIDEO_FORMATS
 
 
 class URLValidator:
@@ -191,7 +192,7 @@ class FormatValidator:
         """
         if not fmt or not isinstance(fmt, str):
             return False
-        return fmt.lower() in settings.VALID_VIDEO_FORMATS
+        return fmt.lower() in ALLOWED_VIDEO_FORMATS
     
     @staticmethod
     def validate_format(fmt: Optional[str]) -> Optional[str]:
@@ -211,6 +212,6 @@ class FormatValidator:
             return None
         
         if not FormatValidator.is_valid_video_format(fmt):
-            raise InvalidFormatException(format_value=fmt, valid_formats=list(settings.VALID_VIDEO_FORMATS))
+            raise InvalidFormatException(format_value=fmt, valid_formats=list(ALLOWED_VIDEO_FORMATS))
         
         return fmt.lower()
