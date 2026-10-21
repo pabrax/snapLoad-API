@@ -241,7 +241,8 @@ Content-Type: application/json
 ```json
 {
   "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-  "quality": "192"  // "128", "192", "256", "320" para audio
+  "quality": "192",  // kbps o "best" (audio)
+  "format": "mp3"    // mp3, m4a, opus, ogg, flac, wav (audio)
 }
 ```
 
@@ -254,9 +255,26 @@ Content-Type: application/json
 }
 ```
 
-**Opciones de Calidad:**
-- Audio: `"128"`, `"192"` (predeterminado), `"256"`, `"320"` (kbps)
-- Video: `"480"`, `"720"`, `"1080"`, `"1440"`, `"2160"`
+**Opciones de audio** (`POST /download`):
+- `quality`: bitrate en kbps (`32`, `40`, `48`, `64`, `80`, `96`, `112`, `128`, `160`, `192`, `224`, `256`, `320`) o `best`. Cualquier otro valor devuelve `400`.
+- `format`: `mp3` (por defecto), `m4a`, `opus`, `ogg`, `flac`, `wav`. (`aac` no se ofrece: yt-dlp lo entrega dentro de un `.m4a` idéntico a `m4a`.)
+- La respuesta devuelve `quality`/`format` canónicos y los archivos se guardan en `downloads/audio/<formato>/<calidad>/`.
+
+| Formato | Comportamiento | Bitrate |
+|---------|----------------|---------|
+| `mp3`, `ogg` | Se recodifica | se aplica (`best` = mejor VBR) |
+| `m4a` | `best` copia el stream AAC original; un bitrate explícito recodifica | se aplica |
+| `opus` | Copia el stream Opus original de YouTube (sin recodificar) | no aplica (`quality` = `source`) |
+| `flac`, `wav` | Contenedor sin pérdida sobre una fuente con pérdida: archivo más grande, sin ganar fidelidad | no aplica (`quality` = `lossless`) |
+
+> El audio de YouTube llega a ~128-130 kbps, así que bitrates mayores solo recodifican (verificado con `ffprobe`).
+
+**Opciones de video** (`POST /download/video`):
+- `format`: `webm` (por defecto, VP9 + Opus), `mp4` (H.264 + AAC), `mkv` (máxima calidad, cualquier códec), `mov` y `avi` (H.264 + AAC).
+- `resolution`: `best` (por defecto), `2160p`, `1440p`, `1080p`, `720p`, `480p`, `360p`. Si el video no tiene esa altura se usa la más alta inferior.
+- `mp4` prefiere H.264 (hasta 1080p) por compatibilidad; VP9/AV1 dentro de mp4 solo se usan si se pide `1440p`/`2160p`.
+- `mov` y `avi` se generan por remux (copia de streams, sin recodificar, rápido) y se limitan a `1080p`; valores mayores devuelven `400`.
+- Los archivos se guardan en `downloads/video/<formato>/<resolución>/`.
 
 ---
 
