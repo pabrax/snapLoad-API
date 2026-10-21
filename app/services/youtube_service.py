@@ -9,13 +9,13 @@ from .base_download_service import BaseDownloadService
 from ..core.enums import MediaType
 from ..core.config import settings
 from ..core.constants import (
-    YTDLP_AUDIO_EXTRACT_FORMAT,
     YTDLP_BEST_VIDEO_FORMAT,
     DEFAULT_VIDEO_FORMAT,
     VIDEO_FORMAT_INFO,
     ALLOWED_VIDEO_FORMATS,
 )
 from ..core.exceptions import InvalidURLException
+from ..core.media_options import AUDIO_FORMATS, QUALITY_BEST, resolve_audio_options
 from ..core.process import resolve_binary
 from ..validators import URLValidator
 
@@ -60,26 +60,29 @@ class YouTubeAudioService(BaseDownloadService):
         Args:
             url: URL de YouTube
             output_path: Directorio de salida
-            **kwargs: Puede incluir 'quality'
+            **kwargs: Puede incluir 'quality' y 'format' (valores canónicos de media_options)
             
         Returns:
             Lista con el comando y argumentos
         """
         output_template = str(output_path / "%(title)s.%(ext)s")
-        audio_quality = str(kwargs.get("quality", "0"))
-        
+        opts = resolve_audio_options(kwargs.get("quality"), kwargs.get("format"), "youtube")
+
         cmd = [
             resolve_binary("yt-dlp"),
+            "-f",
+            "bestaudio/best",
             "-x",
             "--audio-format",
-            YTDLP_AUDIO_EXTRACT_FORMAT,
-            "--audio-quality",
-            audio_quality,
-            "-o",
-            output_template,
-            url,
+            AUDIO_FORMATS[opts.format]["ytdlp"],
         ]
-        
+
+        if not opts.lossless:
+            # 0 = mejor VBR; "192K" = bitrate concreto
+            cmd += ["--audio-quality", "0" if opts.quality == QUALITY_BEST else f"{opts.quality}K"]
+
+        cmd += ["-o", output_template, url]
+
         return cmd
 
 

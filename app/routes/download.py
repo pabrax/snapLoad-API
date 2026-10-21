@@ -15,9 +15,19 @@ from ..validators import URLValidator, QualityValidator, FormatValidator
 from ..helpers import DateTimeHelper
 from ..core.config import settings
 from ..core.exceptions import InvalidURLException, InvalidQualityException, InvalidFormatException
+from ..core.media_options import resolve_audio_options
 
 
 router = APIRouter(tags=["download"])
+
+
+def _audio_options(url: str, quality, fmt):
+    """Resuelve calidad/formato de audio para la fuente de la URL; 400 si no son válidos."""
+    source = "spotify" if URLValidator.is_spotify_url(url) else "youtube"
+    try:
+        return resolve_audio_options(quality, fmt, source)
+    except (InvalidQualityException, InvalidFormatException) as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/lookup")
@@ -36,16 +46,10 @@ def lookup_endpoint(url: str, type: str = "audio", quality: str = None, format: 
             raise HTTPException(status_code=400, detail=str(e))
         
         normalized_quality = None
-        if quality:
-            try:
-                if "spotify" in url.lower():
-                    normalized_quality = QualityValidator.normalize_quality(quality).get("spotdl")
-                else:
-                    normalized_quality = QualityValidator.normalize_quality(quality).get("ytdlp")
-            except InvalidQualityException as e:
-                raise HTTPException(status_code=400, detail=str(e))
-        
-        if format:
+        if type == "audio":
+            opts = _audio_options(url, quality, format)
+            normalized_quality, format = opts.quality, opts.format
+        elif format:
             try:
                 FormatValidator.validate_format(format)
             except InvalidFormatException as e:
@@ -161,27 +165,21 @@ def download_endpoint(payload: DownloadRequest, background_tasks: BackgroundTask
         if not url:
             raise HTTPException(status_code=400, detail="URL requerida")
         
-        # Validar y normalizar quality
-        normalized_quality = None
-        if payload.quality:
-            try:
-                normalized = QualityValidator.normalize_quality(payload.quality)
-                # Determinar cual usar basándose en la URL
-                if "spotify" in url.lower():
-                    normalized_quality = normalized.get("spotdl")
-                else:
-                    normalized_quality = normalized.get("ytdlp")
-            except InvalidQualityException as e:
-                raise HTTPException(status_code=400, detail=str(e))
-        
+        try:
+            URLValidator.validate_url(url)
+        except InvalidURLException as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        opts = _audio_options(url, payload.quality, payload.format)
+
         # Verificar disponibilidad primero
         availability = download_orchestrator.check_availability(
             url=url,
             media_type="audio",
-            quality=normalized_quality,
-            format_=None
+            quality=opts.quality,
+            format_=opts.format
         )
-        
+
         if availability.status == "ready":
             return JSONResponse(status_code=200, content={
                 "message": f"Reusado desde {availability.source}",
@@ -189,6 +187,8 @@ def download_endpoint(payload: DownloadRequest, background_tasks: BackgroundTask
                 "job_id": availability.job_id,
                 "url": url,
                 "files": availability.files,
+                "quality": opts.quality,
+                "format": opts.format,
             })
         
         if availability.status == "pending":
@@ -203,15 +203,17 @@ def download_endpoint(payload: DownloadRequest, background_tasks: BackgroundTask
         result = download_orchestrator.initiate_download(
             url=url,
             media_type="audio",
-            quality=normalized_quality,
-            format_=None
+            quality=opts.quality,
+            format_=opts.format
         )
-        
+
         return JSONResponse(status_code=202, content={
             "message": "Descarga encolada",
             "job_id": result["job_id"],
             "url": url,
             "source": result["source"],
+            "quality": opts.quality,
+            "format": opts.format,
         })
         
     except HTTPException:

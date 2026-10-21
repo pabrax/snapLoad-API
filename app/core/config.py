@@ -18,7 +18,7 @@ class Settings:
     TMP_DIR: Path = BASE_DIR / "tmp"
     
     # Extensiones de archivos
-    AUDIO_EXTENSIONS: Set[str] = {".mp3", ".m4a", ".flac", ".wav", ".aac", ".ogg"}
+    AUDIO_EXTENSIONS: Set[str] = {".mp3", ".m4a", ".flac", ".wav", ".aac", ".ogg", ".opus"}
     VIDEO_EXTENSIONS: Set[str] = {".webm", ".mp4", ".mkv"}
     
     # Formatos válidos
