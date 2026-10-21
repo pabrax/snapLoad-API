@@ -23,6 +23,18 @@ async def lifespan(app: FastAPI):
     Shutdown: Detiene el scheduler y termina jobs
     """
     logger.info("Starting application...")
+
+    # Jobs de un proceso anterior (caída o reinicio) no pueden terminar: liberar sus URLs
+    try:
+        from .helpers import DateTimeHelper
+        from .repositories import download_index_repo
+        interrupted = download_index_repo.fail_pending_before(
+            DateTimeHelper.now_iso(), "Interrupted by server restart"
+        )
+        if interrupted:
+            logger.warning(f"Marked {interrupted} orphan pending download(s) as failed")
+    except Exception as e:
+        logger.error(f"Failed to clean orphan pending downloads: {str(e)}")
     
     # Iniciar scheduler de limpieza
     if cleanup_settings.CLEANUP_SCHEDULE_ENABLED:
