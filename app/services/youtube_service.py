@@ -8,15 +8,10 @@ from typing import List
 from .base_download_service import BaseDownloadService
 from ..core.enums import MediaType
 from ..core.config import settings
-from ..core.constants import (
-    YTDLP_BEST_VIDEO_FORMAT,
-    DEFAULT_VIDEO_FORMAT,
-    VIDEO_FORMAT_INFO,
-    ALLOWED_VIDEO_FORMATS,
-)
 from ..core.exceptions import InvalidURLException
 from ..core.media_options import AUDIO_FORMATS, resolve_audio_options
 from ..core.process import resolve_binary
+from ..core.video_options import resolve_video_options
 from ..validators import URLValidator
 
 
@@ -122,53 +117,26 @@ class YouTubeVideoService(BaseDownloadService):
     ) -> List[str]:
         """
         Construye el comando yt-dlp para descargar video.
-        
+
         Args:
             url: URL de YouTube
             output_path: Directorio de salida
-            **kwargs: Puede incluir 'format'
-            
+            **kwargs: Puede incluir 'format' (contenedor) y 'quality' (resolución, p. ej. "1080p")
+
         Returns:
             Lista con el comando y argumentos
         """
         output_template = str(output_path / "%(title)s.%(ext)s")
-        merge_format = kwargs.get("format") or DEFAULT_VIDEO_FORMAT
+        opts = resolve_video_options(kwargs.get("format"), kwargs.get("quality"))
 
-        format_selector = self._get_format_selector(merge_format)
-        
-        cmd = [
+        return [
             resolve_binary("yt-dlp"),
-            "-f",
-            format_selector,
-            "--merge-output-format",
-            merge_format,
+            *opts.ytdlp_args(),
             "--restrict-filenames",
             "-o",
             output_template,
             url,
         ]
-        
-        return cmd
-    
-    def _get_format_selector(self, merge_format: str) -> str:
-        """
-        Retorna el selector de formato óptimo según el contenedor solicitado.
-        
-        Args:
-            merge_format: Formato del contenedor (mp4, webm, mkv, etc.)
-            
-        Returns:
-            String con el selector de formato para yt-dlp
-        """
-        # Normalizar formato y obtener selector desde constantes
-        fmt = (merge_format or DEFAULT_VIDEO_FORMAT).lower()
-
-        info = VIDEO_FORMAT_INFO.get(fmt)
-        if info and info.get("selector"):
-            return info["selector"]
-
-        # Fallback al selector por defecto de yt-dlp
-        return YTDLP_BEST_VIDEO_FORMAT
 
 
 # Instancias globales

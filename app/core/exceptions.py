@@ -38,8 +38,8 @@ class InvalidURLException(SnapLoadException):
 class InvalidQualityException(SnapLoadException):
     """Se lanza cuando la calidad especificada no es válida."""
     
-    def __init__(self, quality: str = None, reason: str = None):
-        message = "Calidad de audio inválida"
+    def __init__(self, quality: str = None, reason: str = None, media: str = "audio"):
+        message = f"Calidad de {media} inválida"
         details = []
         if quality:
             details.append(f"Calidad recibida: {quality}")
