@@ -269,6 +269,33 @@ class DownloadIndexRepository(BaseRepository):
         finally:
             con.close()
     
+    def fail_pending_before(self, cutoff: str, error: str) -> int:
+        """
+        Marca como fallidas las descargas pendientes creadas antes de `cutoff`.
+
+        Un proceso que se reinicia no conserva los jobs en memoria, así que sus filas
+        pendientes anteriores al arranque nunca terminarán; sin esto la URL quedaría
+        "en progreso" para siempre.
+
+        Args:
+            cutoff: Timestamp ISO; solo se afectan filas creadas antes
+            error: Mensaje de error a guardar
+
+        Returns:
+            Número de filas actualizadas
+        """
+        con = self._connect()
+        try:
+            cur = con.execute(
+                """UPDATE downloads SET status='failed', error=?
+                   WHERE status='pending' AND created_at < ?""",
+                (error, cutoff),
+            )
+            con.commit()
+            return cur.rowcount
+        finally:
+            con.close()
+
     def touch(
         self,
         url: str,

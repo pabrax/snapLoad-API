@@ -35,3 +35,19 @@ def test_non_null_keys_upsert_instead_of_duplicating(sandbox):
     finally:
         con.close()
     assert repo.lookup(URL, "audio", "192", "mp3").job_id == "job2"
+
+
+def test_fail_pending_before_only_touches_older_pending_rows(sandbox, tmp_path):
+    f = tmp_path / "a.mp3"
+    f.write_bytes(b"x")
+    repo.register_pending(URL, "audio", "192", "mp3", "old", "2026-01-01T00:00:00Z")
+    repo.register_pending(URL, "audio", "128", "mp3", "new", "2026-01-02T00:00:00Z")
+    repo.register_pending(URL, "audio", "best", "mp3", "done", "2026-01-01T00:00:00Z")
+    repo.register_success("done", [str(f)])
+
+    assert repo.fail_pending_before("2026-01-01T12:00:00Z", "interrupted") == 1
+
+    old = repo.lookup(URL, "audio", "192", "mp3")
+    assert (old.status, old.error) == ("failed", "interrupted")
+    assert repo.lookup(URL, "audio", "128", "mp3").status == "pending"
+    assert repo.lookup(URL, "audio", "best", "mp3").status == "ready"
