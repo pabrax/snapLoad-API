@@ -172,7 +172,7 @@ class BaseDownloadService(ABC):
                 success = False
                 error_msg = self._extract_error_from_output(raw_output)
             else:
-                error_msg = None if success else TextHelper.truncate_text(raw_output)
+                error_msg = None if success else TextHelper.summarize_error(raw_output)
             
             # 8. Limpiar
             self.file_manager.cleanup_temp_directory(paths["temp_dir"])
