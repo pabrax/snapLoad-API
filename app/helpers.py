@@ -196,6 +196,10 @@ class FileSystemHelper:
             return FileSystemHelper.list_video_files(folder)
 
 
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+_PYTHON_EXCEPTION = re.compile(r"^[A-Za-z_][\w.]*(?:Error|Exception|Exit):\s")
+
+
 class TextHelper:
     """Helper para operaciones con texto."""
     
@@ -221,3 +225,48 @@ class TextHelper:
         if len(lines) <= max_lines:
             return "\n".join(lines)
         return "\n".join(lines[-max_lines:])
+
+    @staticmethod
+    def summarize_error(output: str, max_length: int = 300) -> str:
+        """
+        Reduce la salida de un proceso fallido a una línea legible para el usuario.
+
+        Orden de preferencia: último "ERROR:" (yt-dlp, incluso pegado a una línea de
+        progreso), última excepción de Python (spotdl; une líneas partidas) y, si no hay
+        ninguna, la última línea no vacía. La salida completa sigue en el log del job.
+
+        Args:
+            output: Salida combinada stdout/stderr del proceso
+            max_length: Longitud máxima del resumen
+
+        Returns:
+            Mensaje de una línea (nunca vacío)
+        """
+        if not output or not output.strip():
+            return "Unknown error"
+
+        lines = [ln.rstrip() for ln in _ANSI_ESCAPE.sub("", output).splitlines()]
+
+        def clip(text: str) -> str:
+            text = " ".join(text.split())
+            return text if len(text) <= max_length else text[: max_length - 1] + "…"
+
+        for line in reversed(lines):
+            match = re.search(r"ERROR:\s*(.*)", line)
+            if match and match.group(1).strip():
+                return clip(match.group(1))
+
+        for i in range(len(lines) - 1, -1, -1):
+            if _PYTHON_EXCEPTION.match(lines[i]):
+                parts = [lines[i]]
+                for follow in lines[i + 1:i + 3]:
+                    if follow.strip() and not re.match(r"^\s*(\[|WARNING|ERROR)", follow):
+                        parts.append(follow)
+                    else:
+                        break
+                return clip(" ".join(parts))
+
+        for line in reversed(lines):
+            if line.strip():
+                return clip(line)
+        return "Unknown error"
