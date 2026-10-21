@@ -12,3 +12,8 @@ dependencies = [
     "uvicorn>=0.23.2",
     "yt-dlp>=2025.11.12",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
