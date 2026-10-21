@@ -19,10 +19,10 @@ class Settings:
     
     # Extensiones de archivos
     AUDIO_EXTENSIONS: Set[str] = {".mp3", ".m4a", ".flac", ".wav", ".aac", ".ogg", ".opus"}
-    VIDEO_EXTENSIONS: Set[str] = {".webm", ".mp4", ".mkv"}
+    VIDEO_EXTENSIONS: Set[str] = {".webm", ".mp4", ".mkv", ".mov", ".avi"}
     
     # Formatos válidos
-    VALID_VIDEO_FORMATS: Set[str] = {"webm", "mp4", "mkv"}
+    VALID_VIDEO_FORMATS: Set[str] = {"webm", "mp4", "mkv", "mov", "avi"}
     
     # Configuración de procesos
     JOB_TERMINATION_TIMEOUT: float = 5.0

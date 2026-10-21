@@ -140,7 +140,7 @@ class DownloadOrchestrator:
             if media_type == "audio":
                 return self._initiate_youtube_audio(url, quality, format_, job_id)
             else:  # video
-                return self._initiate_youtube_video(url, format_, job_id)
+                return self._initiate_youtube_video(url, quality, format_, job_id)
         else:
             raise ValueError(f"URL no soportada: {url}")
     
@@ -232,6 +232,7 @@ class DownloadOrchestrator:
     def _initiate_youtube_video(
         self,
         url: str,
+        quality: Optional[str],
         format_: Optional[str],
         job_id: Optional[str]
     ) -> Dict[str, Any]:
@@ -245,7 +246,7 @@ class DownloadOrchestrator:
         self.download_index.register_pending(
             url,
             "video",
-            None,
+            quality,
             format_,
             job_id,
             DateTimeHelper.now_iso()
@@ -256,6 +257,7 @@ class DownloadOrchestrator:
             url=url,
             job_id=job_id,
             callback=None,
+            quality=quality,
             format=format_
         )
         

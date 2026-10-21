@@ -40,15 +40,21 @@ class VideoDownloadRequest(BaseModel):
     url: str = Field(..., description="URL del video a descargar")
     format: Optional[str] = Field(
         None,
-        description="Formato del contenedor de video (webm, mp4, mkv, mov, avi)",
+        description="Formato del contenedor de video (webm por defecto, mp4, mkv, mov, avi)",
         example="webm"
     )
-    
+    resolution: Optional[str] = Field(
+        None,
+        description="Resolución máxima: best (default), 2160p, 1440p, 1080p, 720p, 480p, 360p. mov/avi admiten hasta 1080p",
+        example="1080p"
+    )
+
     class Config:
         json_schema_extra = {
             "example": {
                 "url": "https://www.youtube.com/watch?v=...",
-                "format": "webm"
+                "format": "webm",
+                "resolution": "1080p"
             }
         }
 

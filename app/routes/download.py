@@ -16,9 +16,18 @@ from ..helpers import DateTimeHelper
 from ..core.config import settings
 from ..core.exceptions import InvalidURLException, InvalidQualityException, InvalidFormatException
 from ..core.media_options import resolve_audio_options
+from ..core.video_options import resolve_video_options
 
 
 router = APIRouter(tags=["download"])
+
+
+def _video_options(fmt, resolution):
+    """Resuelve formato/resolución de video; 400 si no son válidos."""
+    try:
+        return resolve_video_options(fmt, resolution)
+    except (InvalidQualityException, InvalidFormatException) as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 def _audio_options(url: str, quality, fmt):
@@ -31,7 +40,7 @@ def _audio_options(url: str, quality, fmt):
 
 
 @router.get("/lookup")
-def lookup_endpoint(url: str, type: str = "audio", quality: str = None, format: str = None):
+def lookup_endpoint(url: str, type: str = "audio", quality: str = None, format: str = None, resolution: str = None):
     """
     Verifica si una descarga existe en cache o catálogo.
     Retorna estado: ready (disponible), pending (en progreso), miss (no existe).
@@ -49,11 +58,9 @@ def lookup_endpoint(url: str, type: str = "audio", quality: str = None, format: 
         if type == "audio":
             opts = _audio_options(url, quality, format)
             normalized_quality, format = opts.quality, opts.format
-        elif format:
-            try:
-                FormatValidator.validate_format(format)
-            except InvalidFormatException as e:
-                raise HTTPException(status_code=400, detail=str(e))
+        else:
+            video = _video_options(format, resolution)
+            normalized_quality, format = video.resolution, video.format
         result = download_orchestrator.check_availability(
             url=url,
             media_type=type,
@@ -75,6 +82,8 @@ def lookup_endpoint(url: str, type: str = "audio", quality: str = None, format: 
             })
             if normalized_quality:
                 response_data["quality"] = normalized_quality
+                if type == "video":
+                    response_data["resolution"] = normalized_quality
             if format:
                 response_data["format"] = format
         elif result.status == "pending":
@@ -86,6 +95,8 @@ def lookup_endpoint(url: str, type: str = "audio", quality: str = None, format: 
                 "quality": normalized_quality,
                 "format": format,
             })
+            if type == "video":
+                response_data["resolution"] = normalized_quality
         
         return JSONResponse(status_code=200, content=response_data)
         
@@ -236,21 +247,16 @@ def download_video(payload: VideoDownloadRequest, background_tasks: BackgroundTa
         except InvalidURLException as e:
             raise HTTPException(status_code=400, detail=str(e))
         
-        # Validar formato
-        video_format = payload.format or "webm"
-        try:
-            FormatValidator.validate_format(video_format)
-        except InvalidFormatException as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        video = _video_options(payload.format, payload.resolution)
         
         # Verificar disponibilidad
         availability = download_orchestrator.check_availability(
             url=url,
             media_type="video",
-            quality=None,
-            format_=video_format
+            quality=video.resolution,
+            format_=video.format
         )
-        
+
         if availability.status == "ready":
             return JSONResponse(status_code=200, content={
                 "message": f"Reusado desde {availability.source}",
@@ -259,7 +265,8 @@ def download_video(payload: VideoDownloadRequest, background_tasks: BackgroundTa
                 "url": url,
                 "source": "youtube_video",
                 "files": availability.files,
-                "format": video_format,
+                "format": video.format,
+                "resolution": video.resolution,
             })
         
         if availability.status == "pending":
@@ -275,15 +282,17 @@ def download_video(payload: VideoDownloadRequest, background_tasks: BackgroundTa
         result = download_orchestrator.initiate_download(
             url=url,
             media_type="video",
-            quality=None,
-            format_=video_format
+            quality=video.resolution,
+            format_=video.format
         )
-        
+
         return JSONResponse(status_code=202, content={
             "message": "Descarga encolada",
             "job_id": result["job_id"],
             "url": url,
             "source": "youtube_video",
+            "format": video.format,
+            "resolution": video.resolution,
         })
         
     except HTTPException:

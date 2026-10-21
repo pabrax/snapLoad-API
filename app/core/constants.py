@@ -45,21 +45,26 @@ YTDLP_BEST_VIDEO_FORMAT = "bestvideo+bestaudio/best"
 
 VIDEO_FORMAT_INFO = {
     "mp4": {
-        "selector": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
-        "codecs": "H.264 + AAC",
+        "codecs": "H.264 + AAC (hasta 1080p; AV1/VP9 solo si se pide 1440p/2160p)",
         "description": "Universal, alta compatibilidad"
     },
     "webm": {
-        "selector": "bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio/best",
         "codecs": "VP9 + Opus",
-        "description": "Optimizado para web"
+        "description": "Optimizado para web, admite hasta 2160p"
     },
     "mkv": {
-        "selector": "bestvideo+bestaudio/best",
         "codecs": "Universal (todos)",
         "description": "Contenedor flexible, máxima calidad"
+    },
+    "mov": {
+        "codecs": "H.264 + AAC (hasta 1080p, sin recodificar)",
+        "description": "QuickTime / Apple"
+    },
+    "avi": {
+        "codecs": "H.264 + AAC (hasta 1080p, sin recodificar)",
+        "description": "Contenedor clásico; algunos reproductores antiguos no lo soportan"
     }
 }
 
-# Formatos de video permitidos
-ALLOWED_VIDEO_FORMATS = ["mp4", "webm", "mkv"]
+# Formatos de video permitidos (la lógica de selección vive en video_options.VIDEO_FORMATS)
+ALLOWED_VIDEO_FORMATS = ["mp4", "webm", "mkv", "mov", "avi"]
