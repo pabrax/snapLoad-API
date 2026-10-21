@@ -3,7 +3,7 @@ Gestor de jobs de descarga.
 Mantiene un registro de procesos en ejecución y permite su gestión.
 """
 import threading
-from typing import Optional, Dict
+from typing import Optional, Dict, Set
 from subprocess import Popen
 
 from ..core.config import settings
@@ -34,6 +34,7 @@ class JobManager:
             return
         
         self._registry: Dict[str, Popen] = {}
+        self._cancelled: Set[str] = set()
         self._initialized = True
     
     def register_job(self, job_id: str, process: Popen) -> None:
@@ -100,7 +101,10 @@ class JobManager:
         process = self.get_job_process(job_id)
         if not process:
             return False
-        
+
+        with self._lock:
+            self._cancelled.add(job_id)
+
         try:
             terminate_process(process, timeout=timeout)
         finally:
@@ -108,6 +112,22 @@ class JobManager:
         
         return True
     
+    def consume_cancelled(self, job_id: str) -> bool:
+        """
+        Indica si el job fue terminado a propósito (cancelación o apagado) y borra la marca.
+
+        Args:
+            job_id: Identificador del job
+
+        Returns:
+            True si se había solicitado su terminación
+        """
+        with self._lock:
+            if job_id in self._cancelled:
+                self._cancelled.discard(job_id)
+                return True
+            return False
+
     def terminate_all(self) -> None:
         """Termina todos los jobs registrados de forma ordenada."""
         with self._lock:

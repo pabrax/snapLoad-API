@@ -325,29 +325,11 @@ def cancel_job(job_id: str):
             except Exception:
                 raise HTTPException(status_code=404, detail="job no encontrado")
         
-        # Actualizar metadata si existe
-        try:
-            metadata = metadata_manager.read_metadata(job_id)
-            # Actualizar status (esto se podría hacer en el manager)
-            from ..schemas import JobMetadata
-            updated = JobMetadata(
-                job_id=metadata.job_id,
-                url=metadata.url,
-                media_type=metadata.media_type,
-                status="cancelled",
-                files=metadata.files,
-                created_at=metadata.created_at,
-                started_at=metadata.started_at,
-                finished_at=DateTimeHelper.now_iso(),
-                error=metadata.error,
-            )
-            metadata_manager.write_metadata(updated)
-        except Exception:
-            pass
+        # El hilo de descarga registra el estado 'cancelled' al ver terminar el proceso
         
         return JSONResponse(content={
             "job_id": job_id,
-            "cancelled": success,
+            "cancelled": True,
         })
         
     except HTTPException:

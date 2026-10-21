@@ -160,11 +160,15 @@ class BaseDownloadService(ABC):
             finished_at = DateTimeHelper.now_iso()
             self.job_manager.unregister_job(job_id)
             
-            success = process.returncode == 0
-            
-            moved_files = self._move_files(paths["temp_dir"], paths["download_dir"])
-            
-            if success and len(moved_files) == 0:
+            cancelled = self.job_manager.consume_cancelled(job_id)
+            success = process.returncode == 0 and not cancelled
+
+            # Un job cancelado no conserva resultados parciales
+            moved_files = [] if cancelled else self._move_files(paths["temp_dir"], paths["download_dir"])
+
+            if cancelled:
+                error_msg = "Cancelled by user"
+            elif success and len(moved_files) == 0:
                 success = False
                 error_msg = self._extract_error_from_output(raw_output)
             else:
@@ -174,7 +178,11 @@ class BaseDownloadService(ABC):
             self.file_manager.cleanup_temp_directory(paths["temp_dir"])
             
             # 9. Guardar metadata
-            status = JobStatus.SUCCESS if success else JobStatus.FAILED
+            status = (
+                JobStatus.CANCELLED if cancelled
+                else JobStatus.SUCCESS if success
+                else JobStatus.FAILED
+            )
             self._save_metadata(
                 job_id=job_id,
                 url=url,
