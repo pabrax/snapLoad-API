@@ -10,7 +10,7 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "spotdl>=4.4.3",
     "uvicorn>=0.23.2",
-    "yt-dlp>=2025.11.12",
+    "yt-dlp[default]>=2026.8.19",
 ]
 
 [dependency-groups]
