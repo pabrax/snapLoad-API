@@ -31,8 +31,8 @@ def test_download_without_quality_uses_canonical_defaults(client):
 
 
 def test_download_passes_bitrate_and_format(client):
-    client.post("/download", json={"url": YT, "quality": "192k", "format": "OPUS"})
-    assert (client.calls[0]["quality"], client.calls[0]["format_"]) == ("192", "opus")
+    client.post("/download", json={"url": YT, "quality": "192k", "format": "OGG"})
+    assert (client.calls[0]["quality"], client.calls[0]["format_"]) == ("192", "ogg")
 
 
 def test_download_lossless_ignores_bitrate(client):
@@ -46,7 +46,7 @@ def test_download_lossless_ignores_bitrate(client):
         {"url": YT, "quality": "999"},
         {"url": YT, "quality": "bestaudio2"},
         {"url": YT, "format": "mp4"},
-        {"url": SP, "format": "aac"},
+        {"url": YT, "format": "aac"},
         {"url": "https://example.com/x"},
     ],
 )
@@ -57,17 +57,17 @@ def test_invalid_requests_are_400_and_never_start_a_job(client, payload):
 
 
 def test_spotify_url_is_not_confused_by_substring(client):
-    # a YouTube URL that merely contains the word "spotify" must use YouTube rules (aac allowed)
-    res = client.post("/download", json={"url": YT + "&t=spotify", "format": "aac"})
-    assert res.status_code == 202
+    # a YouTube URL that merely contains the word "spotify" must be handled as YouTube
+    res = client.post("/download", json={"url": YT + "&t=spotify", "format": "opus"})
+    assert res.status_code == 202 and client.calls[0]["quality"] == "source"
 
 
 def test_ready_entry_is_reused_without_starting_a_job(client, tmp_path):
     f = tmp_path / "song.opus"
     f.write_bytes(b"x")
-    download_index_repo.upsert_ready(YT, "audio", "192", "opus", [str(f)], "2026-01-01T00:00:00Z", job_id="old")
+    download_index_repo.upsert_ready(YT, "audio", "192", "m4a", [str(f)], "2026-01-01T00:00:00Z", job_id="old")
 
-    res = client.post("/download", json={"url": YT, "quality": "192", "format": "opus"})
+    res = client.post("/download", json={"url": YT, "quality": "192", "format": "m4a"})
     assert res.status_code == 200 and res.json()["status"] == "ready"
     assert client.calls == []
 
@@ -82,10 +82,10 @@ def test_different_format_is_a_cache_miss(client, tmp_path):
 
 
 def test_lookup_reports_canonical_audio_options(client):
-    res = client.get("/lookup", params={"url": YT, "type": "audio", "quality": "192k", "format": "OPUS"})
+    res = client.get("/lookup", params={"url": YT, "type": "audio", "quality": "192k", "format": "OGG"})
     assert res.status_code == 200
     body = res.json()
-    assert (body["status"], body["quality"], body["format"]) == ("miss", "192", "opus")
+    assert (body["status"], body["quality"], body["format"]) == ("miss", "192", "ogg")
 
 
 def test_lookup_rejects_invalid_audio_format(client):

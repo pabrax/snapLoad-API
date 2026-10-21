@@ -24,8 +24,28 @@ def test_ytdlp_bitrate():
     assert args[-1] == "https://youtu.be/x"
 
 
-def test_ytdlp_best_uses_vbr_zero():
-    assert yt(quality="best", format="m4a")[3:7] == ["--audio-format", "m4a", "--audio-quality", "0"]
+def test_ytdlp_best_mp3_uses_vbr_zero():
+    assert yt(quality="best", format="mp3")[3:7] == ["--audio-format", "mp3", "--audio-quality", "0"]
+
+
+def test_ytdlp_best_ogg_uses_vbr_zero():
+    args = yt(quality="best", format="ogg")
+    assert args[args.index("--audio-quality") + 1] == "0"
+
+
+def test_ytdlp_best_m4a_copies_source_instead_of_inflating():
+    args = yt(quality="best", format="m4a")
+    assert "--audio-quality" not in args and args[args.index("--audio-format") + 1] == "m4a"
+
+
+def test_ytdlp_m4a_with_bitrate_reencodes():
+    args = yt(quality="64", format="m4a")
+    assert args[args.index("--audio-quality") + 1] == "64K"
+
+
+def test_ytdlp_opus_never_gets_audio_quality():
+    args = yt(quality="96", format="opus")
+    assert "--audio-quality" not in args and args[args.index("--audio-format") + 1] == "opus"
 
 
 def test_ytdlp_lossless_omits_audio_quality():
@@ -46,13 +66,14 @@ def test_ytdlp_missing_kwargs_never_emit_none():
 
 
 def test_spotdl_bitrate_and_format():
-    args = sp(quality="192", format="opus")
-    assert args[args.index("--format") + 1] == "opus"
+    args = sp(quality="192", format="ogg")
+    assert args[args.index("--format") + 1] == "ogg"
     assert args[args.index("--bitrate") + 1] == "192k"
 
 
-def test_spotdl_best_is_auto_and_lossless_disables_bitrate():
+def test_spotdl_best_and_opus_are_auto_and_lossless_disables_bitrate():
     assert sp(quality="best", format="mp3")[-2:] == ["--bitrate", "auto"]
+    assert sp(quality="source", format="opus")[-2:] == ["--bitrate", "auto"]
     assert sp(quality="lossless", format="flac")[-2:] == ["--bitrate", "disable"]
 
 
@@ -62,5 +83,15 @@ def test_spotdl_missing_kwargs_never_emit_none():
 
 
 def test_all_output_extensions_are_collected():
-    for ext in (".mp3", ".m4a", ".aac", ".opus", ".ogg", ".flac", ".wav"):
+    for ext in (".mp3", ".m4a", ".opus", ".ogg", ".flac", ".wav"):
         assert ext in settings.AUDIO_EXTENSIONS
+
+
+def test_ytdlp_prefers_the_native_source_stream_so_it_can_be_copied():
+    def selector(**kw):
+        args = yt(**kw)
+        return args[args.index("-f") + 1]
+
+    assert selector(quality="best", format="m4a") == "bestaudio[ext=m4a]/bestaudio/best"
+    assert selector(quality="best", format="opus") == "bestaudio[acodec=opus]/bestaudio/best"
+    assert selector(quality="128", format="mp3") == "bestaudio/best"

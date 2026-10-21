@@ -15,7 +15,7 @@ from ..core.constants import (
     ALLOWED_VIDEO_FORMATS,
 )
 from ..core.exceptions import InvalidURLException
-from ..core.media_options import AUDIO_FORMATS, QUALITY_BEST, resolve_audio_options
+from ..core.media_options import AUDIO_FORMATS, resolve_audio_options
 from ..core.process import resolve_binary
 from ..validators import URLValidator
 
@@ -71,15 +71,15 @@ class YouTubeAudioService(BaseDownloadService):
         cmd = [
             resolve_binary("yt-dlp"),
             "-f",
-            "bestaudio/best",
+            opts.ytdlp_format_selector(),
             "-x",
             "--audio-format",
             AUDIO_FORMATS[opts.format]["ytdlp"],
         ]
 
-        if not opts.lossless:
-            # 0 = mejor VBR; "192K" = bitrate concreto
-            cmd += ["--audio-quality", "0" if opts.quality == QUALITY_BEST else f"{opts.quality}K"]
+        audio_quality = opts.ytdlp_audio_quality()
+        if audio_quality is not None:
+            cmd += ["--audio-quality", audio_quality]
 
         cmd += ["-o", output_template, url]
 
