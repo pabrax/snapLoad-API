@@ -253,7 +253,8 @@ Content-Type: application/json
 ```json
 {
   "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-  "quality": "192"  // "128", "192", "256", "320" for audio
+  "quality": "192",  // kbps or "best" (audio)
+  "format": "mp3"    // mp3, m4a, opus, ogg, flac, wav (audio)
 }
 ```
 
@@ -266,9 +267,26 @@ Content-Type: application/json
 }
 ```
 
-**Quality Options:**
-- Audio: `"128"`, `"192"` (default), `"256"`, `"320"` (kbps)
-- Video: `"480"`, `"720"`, `"1080"`, `"1440"`, `"2160"`
+**Audio options** (`POST /download`):
+- `quality`: bitrate in kbps (`32`, `40`, `48`, `64`, `80`, `96`, `112`, `128`, `160`, `192`, `224`, `256`, `320`) or `best`. Anything else returns `400`.
+- `format`: `mp3` (default), `m4a`, `opus`, `ogg`, `flac`, `wav`. (`aac` is not offered: yt-dlp delivers it inside an `.m4a` identical to `m4a`.)
+- The response echoes the canonical `quality`/`format`, and files are stored in `downloads/audio/<format>/<quality>/`.
+
+| Format | Behavior | Bitrate |
+|--------|----------|---------|
+| `mp3`, `ogg` | Re-encoded | applied (`best` = highest VBR) |
+| `m4a` | `best` copies the original AAC stream; an explicit bitrate re-encodes | applied |
+| `opus` | Copies YouTube's original Opus stream (no re-encoding) | not applicable (`quality` = `source`) |
+| `flac`, `wav` | Lossless container around a lossy source: bigger file, no fidelity gain | not applicable (`quality` = `lossless`) |
+
+> YouTube audio tops out around 128-130 kbps, so bitrates above that only re-encode (verified with `ffprobe`).
+
+**Video options** (`POST /download/video`):
+- `format`: `webm` (default, VP9 + Opus), `mp4` (H.264 + AAC), `mkv` (best quality, any codec), `mov` and `avi` (H.264 + AAC).
+- `resolution`: `best` (default), `2160p`, `1440p`, `1080p`, `720p`, `480p`, `360p`. If the video does not have that height, the highest one below it is used.
+- `mp4` prefers H.264 (up to 1080p) for compatibility; VP9/AV1 inside mp4 are only used when `1440p`/`2160p` is requested.
+- `mov` and `avi` are produced by remuxing (stream copy, no re-encoding, fast) and are limited to `1080p`; higher values return `400`.
+- Files are stored in `downloads/video/<format>/<resolution>/`.
 
 ---
 
