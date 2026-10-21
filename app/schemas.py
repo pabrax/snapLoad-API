@@ -16,15 +16,21 @@ class DownloadRequest(BaseModel):
     url: str = Field(..., description="URL del contenido a descargar")
     quality: Optional[str] = Field(
         None, 
-        description="Calidad del audio (ej: '320k', '192k', '0')",
+        description="Bitrate en kbps (ej: '320', '192k') o 'best'. Se ignora en formatos sin pérdida (flac, wav)",
         example="320k"
+    )
+    format: Optional[str] = Field(
+        None,
+        description="Formato de audio: mp3 (default), m4a, aac, opus, ogg, flac, wav (aac no está disponible para Spotify)",
+        example="mp3"
     )
     
     class Config:
         json_schema_extra = {
             "example": {
                 "url": "https://open.spotify.com/track/...",
-                "quality": "320k"
+                "quality": "320k",
+                "format": "mp3"
             }
         }
 

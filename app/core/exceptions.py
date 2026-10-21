@@ -53,8 +53,8 @@ class InvalidQualityException(SnapLoadException):
 class InvalidFormatException(SnapLoadException):
     """Se lanza cuando el formato especificado no es válido."""
     
-    def __init__(self, format_value: str = None, valid_formats: list = None):
-        message = "Formato de video inválido"
+    def __init__(self, format_value: str = None, valid_formats: list = None, media: str = "video"):
+        message = f"Formato de {media} inválido"
         details = []
         if format_value:
             details.append(f"Formato recibido: {format_value}")

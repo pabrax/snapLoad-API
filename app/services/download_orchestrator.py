@@ -135,10 +135,10 @@ class DownloadOrchestrator:
         source = self._determine_source(url)
         
         if source == DownloadSource.SPOTIFY:
-            return self._initiate_spotify_download(url, quality, job_id)
+            return self._initiate_spotify_download(url, quality, format_, job_id)
         elif source == DownloadSource.YOUTUBE:
             if media_type == "audio":
-                return self._initiate_youtube_audio(url, quality, job_id)
+                return self._initiate_youtube_audio(url, quality, format_, job_id)
             else:  # video
                 return self._initiate_youtube_video(url, format_, job_id)
         else:
@@ -157,6 +157,7 @@ class DownloadOrchestrator:
         self,
         url: str,
         quality: Optional[str],
+        format_: Optional[str],
         job_id: Optional[str]
     ) -> Dict[str, Any]:
         """Inicia descarga de Spotify."""
@@ -170,17 +171,18 @@ class DownloadOrchestrator:
             url,
             "audio",
             quality,
-            None,
+            format_,
             job_id,
             DateTimeHelper.now_iso()
         )
-        
+
         # Iniciar descarga asíncrona
         spotify_download_service.download(
             url=url,
             job_id=job_id,
             callback=None,
-            quality=quality
+            quality=quality,
+            format=format_
         )
         
         return {
@@ -193,6 +195,7 @@ class DownloadOrchestrator:
         self,
         url: str,
         quality: Optional[str],
+        format_: Optional[str],
         job_id: Optional[str]
     ) -> Dict[str, Any]:
         """Inicia descarga de audio de YouTube."""
@@ -206,17 +209,18 @@ class DownloadOrchestrator:
             url,
             "audio",
             quality,
-            None,
+            format_,
             job_id,
             DateTimeHelper.now_iso()
         )
-        
+
         # Iniciar descarga asíncrona
         youtube_audio_service.download(
             url=url,
             job_id=job_id,
             callback=None,
-            quality=quality
+            quality=quality,
+            format=format_
         )
         
         return {

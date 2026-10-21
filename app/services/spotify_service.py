@@ -14,6 +14,7 @@ from .base_download_service import BaseDownloadService
 from ..core.enums import MediaType
 from ..core.config import settings
 from ..core.exceptions import InvalidURLException
+from ..core.media_options import AUDIO_FORMATS, QUALITY_BEST, resolve_audio_options
 from ..core.process import resolve_binary
 from ..validators import URLValidator
 
@@ -58,17 +59,31 @@ class SpotifyDownloadService(BaseDownloadService):
         Args:
             url: URL de Spotify
             output_path: Directorio de salida
-            **kwargs: Puede incluir 'quality'
+            **kwargs: Puede incluir 'quality' y 'format' (valores canónicos de media_options)
             
         Returns:
             Lista con el comando y argumentos
         """
-        cmd = [resolve_binary("spotdl"), url, "--output", str(output_path)]
-        
-        quality = kwargs.get("quality")
-        if quality:
-            cmd.extend(["--bitrate", str(quality)])
-        
+        opts = resolve_audio_options(kwargs.get("quality"), kwargs.get("format"), "spotify")
+
+        if opts.lossless:
+            bitrate = "disable"
+        elif opts.quality == QUALITY_BEST:
+            bitrate = "auto"
+        else:
+            bitrate = f"{opts.quality}k"
+
+        cmd = [
+            resolve_binary("spotdl"),
+            url,
+            "--output",
+            str(output_path),
+            "--format",
+            AUDIO_FORMATS[opts.format]["spotdl"],
+            "--bitrate",
+            bitrate,
+        ]
+
         return cmd
 
 

@@ -231,10 +231,10 @@ class BaseDownloadService(ABC):
         Returns:
             Dict con las rutas necesarias
         """
-        quality_or_format = kwargs.get("quality") or kwargs.get("format")
-        
+        subfolder = "/".join(p for p in (kwargs.get("format"), kwargs.get("quality")) if p)
+
         download_dir = self.file_manager.get_download_path(
-            self.get_media_type().value, quality_or_format
+            self.get_media_type().value, subfolder or None
         )
         temp_dir = self.file_manager.get_temp_path(
             self.get_source_name(), self.get_media_type().value, job_id
