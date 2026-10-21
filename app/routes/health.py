@@ -3,9 +3,9 @@ Rutas de health check y bienvenida.
 """
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from shutil import which
 
 from ..core.config import settings
+from ..core.process import find_binary
 from ..schemas import HealthResponse, BinaryInfo
 
 router = APIRouter(tags=["Health"])
@@ -30,7 +30,7 @@ def health_check():
     all_ok = True
     
     for name, exe in settings.REQUIRED_BINARIES.items():
-        path = which(exe)
+        path = find_binary(exe)
         ok = path is not None
         binaries_status[name] = {"installed": ok, "path": path}
         

@@ -14,6 +14,7 @@ from .base_download_service import BaseDownloadService
 from ..core.enums import MediaType
 from ..core.config import settings
 from ..core.exceptions import InvalidURLException
+from ..core.process import resolve_binary
 from ..validators import URLValidator
 
 
@@ -62,7 +63,7 @@ class SpotifyDownloadService(BaseDownloadService):
         Returns:
             Lista con el comando y argumentos
         """
-        cmd = ["spotdl", url, "--output", str(output_path)]
+        cmd = [resolve_binary("spotdl"), url, "--output", str(output_path)]
         
         quality = kwargs.get("quality")
         if quality:

@@ -3,12 +3,11 @@ Gestor de jobs de descarga.
 Mantiene un registro de procesos en ejecución y permite su gestión.
 """
 import threading
-import os
-import signal
 from typing import Optional, Dict
 from subprocess import Popen
 
 from ..core.config import settings
+from ..core.process import terminate_process
 
 
 class JobManager:
@@ -103,27 +102,7 @@ class JobManager:
             return False
         
         try:
-            # Intentar terminación elegante (SIGTERM)
-            try:
-                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-            except Exception:
-                try:
-                    process.terminate()
-                except Exception:
-                    pass
-            
-            # Esperar brevemente a que termine
-            try:
-                process.wait(timeout=timeout)
-            except Exception:
-                # Si no termina, forzar con SIGKILL
-                try:
-                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-                except Exception:
-                    try:
-                        process.kill()
-                    except Exception:
-                        pass
+            terminate_process(process, timeout=timeout)
         finally:
             self.unregister_job(job_id)
         

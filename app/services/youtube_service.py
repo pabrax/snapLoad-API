@@ -16,6 +16,7 @@ from ..core.constants import (
     ALLOWED_VIDEO_FORMATS,
 )
 from ..core.exceptions import InvalidURLException
+from ..core.process import resolve_binary
 from ..validators import URLValidator
 
 
@@ -68,7 +69,7 @@ class YouTubeAudioService(BaseDownloadService):
         audio_quality = str(kwargs.get("quality", "0"))
         
         cmd = [
-            "yt-dlp",
+            resolve_binary("yt-dlp"),
             "-x",
             "--audio-format",
             YTDLP_AUDIO_EXTRACT_FORMAT,
@@ -133,7 +134,7 @@ class YouTubeVideoService(BaseDownloadService):
         format_selector = self._get_format_selector(merge_format)
         
         cmd = [
-            "yt-dlp",
+            resolve_binary("yt-dlp"),
             "-f",
             format_selector,
             "--merge-output-format",

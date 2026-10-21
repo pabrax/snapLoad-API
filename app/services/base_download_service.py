@@ -3,7 +3,6 @@ Servicio base de descarga.
 Define la interfaz común para todos los servicios de descarga.
 """
 import subprocess
-import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, Callable, List
@@ -11,6 +10,7 @@ import threading
 
 from ..core.config import settings
 from ..core.enums import JobStatus, MediaType
+from ..core.process import popen_kwargs
 from ..schemas import JobMetadata, FileInfo
 from ..managers import job_manager, file_manager, metadata_manager
 from ..helpers import DateTimeHelper, TextHelper
@@ -150,7 +150,7 @@ class BaseDownloadService(ABC):
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    preexec_fn=os.setsid,
+                    **popen_kwargs(),
                 )
                 
                 self.job_manager.register_job(job_id, process)
