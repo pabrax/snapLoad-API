@@ -100,13 +100,15 @@ class DownloadIndexRepository(BaseRepository):
                    FROM downloads 
                    WHERE url=? AND type=? 
                      AND IFNULL(quality,'')=IFNULL(?, '') 
-                     AND IFNULL(format,'')=IFNULL(?, '')""",
+                     AND IFNULL(format,'')=IFNULL(?, '')
+                   ORDER BY CASE status WHEN 'ready' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,
+                            created_at DESC""",
                 (url, media_type, quality, format_),
             )
             row = cur.fetchone()
             if not row:
                 return None
-            
+
             entry = DownloadIndexEntry(
                 url=row[0],
                 type=row[1],
