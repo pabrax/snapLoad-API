@@ -12,6 +12,7 @@ services:
       - PORT=8000
       - WORKERS=1
       - RETENTION_HOURS=3
+      - LIBRARY_AUTO_KEEP=true
       - CLEANUP_CRON=0 * * * *
       - ENABLE_ADMIN_ENDPOINTS=false
     env_file:

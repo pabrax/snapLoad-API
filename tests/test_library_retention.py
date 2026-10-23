@@ -168,3 +168,83 @@ def test_patch_invalid_body_422(client, body):
 def test_patch_unknown_track_404(client):
     assert client.patch(f"/library/tracks/{'0' * 16}", json={"kept": True}).status_code == 404
     assert client.patch("/library/tracks/zzz", json={"kept": True}).status_code == 404
+
+
+# --- cleanup respects kept tracks ---
+
+import os
+import time
+
+from app.core.config import cleanup_settings
+from app.services import track_metadata
+from app.services.cleanup_service import cleanup_service
+
+
+def _old_track(name, kept, age_hours=5):
+    audio = settings.DOWNLOAD_DIR / "audio" / name
+    audio.parent.mkdir(parents=True, exist_ok=True)
+    audio.write_bytes(b"x" * 10)
+    sidecar = track_metadata.write_sidecar(audio, {"title": name})
+    past = time.time() - age_hours * 3600
+    for f in (audio, sidecar):
+        os.utime(f, (past, past))
+    download_index_repo.upsert_ready(
+        f"https://youtu.be/{name}", "audio", "best", "mp3", [str(audio)], "2026-01-01T00:00:00Z", job_id=name
+    )
+    track_id = track_repo.upsert(path=audio, job_id=name, fmt="mp3", size_bytes=10, title=name, kept=kept)
+    return audio, sidecar, track_id
+
+
+def test_cleanup_skips_kept_old_track(sandbox, monkeypatch):
+    monkeypatch.setattr(cleanup_settings, "RETENTION_HOURS", 1.0)
+    audio, sidecar, track_id = _old_track("kept.mp3", kept=True)
+
+    stats = cleanup_service.cleanup_downloads(dry_run=False)
+
+    assert audio.exists() and sidecar.exists()
+    assert stats.files_deleted == 0
+    assert track_repo.get(track_id) is not None
+
+
+def test_cleanup_removes_unkept_old_track_and_row(sandbox, monkeypatch):
+    monkeypatch.setattr(cleanup_settings, "RETENTION_HOURS", 1.0)
+    audio, sidecar, track_id = _old_track("temp.mp3", kept=False)
+    cover = settings.DOWNLOAD_DIR / ".covers" / f"{track_id}.jpg"
+    cover.parent.mkdir(parents=True)
+    cover.write_bytes(b"jpg")
+
+    cleanup_service.cleanup_downloads(dry_run=False)
+
+    assert not audio.exists() and not sidecar.exists() and not cover.exists()
+    assert track_repo.get(track_id) is None
+
+
+def test_cleanup_keeps_young_unkept_tracks(sandbox, monkeypatch):
+    monkeypatch.setattr(cleanup_settings, "RETENTION_HOURS", 24.0)
+    audio, _, track_id = _old_track("young.mp3", kept=False, age_hours=1)
+
+    cleanup_service.cleanup_downloads(dry_run=False)
+
+    assert audio.exists() and track_repo.get(track_id) is not None
+
+
+def test_dry_run_does_not_count_kept(sandbox, monkeypatch):
+    monkeypatch.setattr(cleanup_settings, "RETENTION_HOURS", 1.0)
+    kept_audio, kept_sidecar, _ = _old_track("kept.mp3", kept=True)
+    temp_audio, temp_sidecar, temp_id = _old_track("temp.mp3", kept=False)
+
+    stats = cleanup_service.cleanup_downloads(dry_run=True)
+
+    assert stats.files_deleted == 2  # only the unkept audio and its sidecar
+    assert all(f.exists() for f in (kept_audio, kept_sidecar, temp_audio, temp_sidecar))
+    assert track_repo.get(temp_id) is not None
+
+
+def test_cleanup_database_leaves_kept_tracks(sandbox, monkeypatch):
+    monkeypatch.setattr(cleanup_settings, "RETENTION_HOURS", 1.0)
+    audio, _, track_id = _old_track("kept.mp3", kept=True)
+
+    cleanup_service.cleanup_database(max_age_hours=1.0, dry_run=False)
+
+    assert track_repo.get(track_id) is not None
+    assert download_index_repo.find_by_job_id("kept.mp3").status == "ready"

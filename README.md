@@ -177,6 +177,9 @@ CLEANUP_SCHEDULE_ENABLED=true        # Enable automatic cleanup
 CLEANUP_CRON="0 * * * *"             # Clean every hour
 TEMP_CLEANUP_CRON="0 */2 * * *"      # Clean temp every 2 hours
 
+# Music library
+LIBRARY_AUTO_KEEP=true               # New audio downloads are kept (exempt from RETENTION_HOURS) until you delete them; false = they expire like any other file
+
 # Admin Endpoints (Disable in production)
 ENABLE_ADMIN_ENDPOINTS=false         # Set to true only for testing/development
 
@@ -371,6 +374,24 @@ POST /cancel/{job_id}
   "message": "Job cancelled successfully"
 }
 ```
+
+---
+
+### Music Library
+
+Audio downloads are indexed (title, artist, album, duration, cover) so they can be played back. Video is not listed.
+
+```http
+GET    /library/tracks?limit=50&offset=0&q=daft   # list, newest first (limit 1-200)
+GET    /library/tracks/{id}/stream                 # inline audio, supports HTTP Range (seek)
+GET    /library/tracks/{id}/cover                  # embedded cover (JPEG), 404 if none
+PATCH  /library/tracks/{id}   {"kept": true}       # protect from / expose to cleanup
+DELETE /library/tracks/{id}                        # delete audio, sidecar and records (204)
+```
+
+`GET /library/tracks` returns `{"tracks": [{"id", "title", "artist", "album", "duration_s", "format", "size_bytes", "has_cover", "kept"}], "total", "limit", "offset", "kept_bytes"}`. Ids are opaque (16 hex chars).
+
+Tracks flagged `kept` are skipped by the cleanup; new audio downloads are kept by default (`LIBRARY_AUTO_KEEP=true`). Tags come from the file, then from a `<file>.meta.json` sidecar, then from the file name. wav files carry no cover.
 
 ---
 

@@ -165,6 +165,9 @@ CLEANUP_SCHEDULE_ENABLED=true        # Habilitar limpieza automática
 CLEANUP_CRON="0 * * * *"             # Limpiar cada hora
 TEMP_CLEANUP_CRON="0 */2 * * *"      # Limpiar temporales cada 2 horas
 
+# Biblioteca de música
+LIBRARY_AUTO_KEEP=true               # Las descargas de audio nuevas se conservan (exentas de RETENTION_HOURS) hasta que las borres; false = caducan como cualquier archivo
+
 # Endpoints Admin (Deshabilitar en producción)
 ENABLE_ADMIN_ENDPOINTS=false         # Establecer en true solo para testing/desarrollo
 
@@ -359,6 +362,24 @@ POST /cancel/{job_id}
   "message": "Job cancelled successfully"
 }
 ```
+
+---
+
+### Biblioteca de Música
+
+Las descargas de audio se indexan (título, artista, álbum, duración, portada) para poder reproducirlas. El video no se lista.
+
+```http
+GET    /library/tracks?limit=50&offset=0&q=daft   # listar, más recientes primero (limit 1-200)
+GET    /library/tracks/{id}/stream                 # audio en línea, admite HTTP Range (seek)
+GET    /library/tracks/{id}/cover                  # portada embebida (JPEG), 404 si no hay
+PATCH  /library/tracks/{id}   {"kept": true}       # proteger de / exponer a la limpieza
+DELETE /library/tracks/{id}                        # borra audio, sidecar y registros (204)
+```
+
+`GET /library/tracks` devuelve `{"tracks": [{"id", "title", "artist", "album", "duration_s", "format", "size_bytes", "has_cover", "kept"}], "total", "limit", "offset", "kept_bytes"}`. Los ids son opacos (16 caracteres hex).
+
+La limpieza no toca las pistas `kept`; las descargas de audio nuevas se conservan por defecto (`LIBRARY_AUTO_KEEP=true`). Los tags salen del archivo, luego de un sidecar `<archivo>.meta.json` y por último del nombre. Los wav no llevan portada.
 
 ---
 

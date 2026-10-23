@@ -13,8 +13,9 @@ from datetime import datetime, timedelta
 from ..core.config import settings, cleanup_settings
 from ..core.enums import CleanupTarget, CleanupStrategy
 from ..schemas import CleanupStats, CleanupSummary, StorageStats
-from ..repositories import download_index_repo, media_repo
+from ..repositories import download_index_repo, media_repo, track_repo
 from ..helpers import DateTimeHelper
+from . import track_metadata
 
 
 class CleanupService:
@@ -31,6 +32,7 @@ class CleanupService:
     def __init__(self):
         self.download_index = download_index_repo
         self.media_catalog = media_repo
+        self.tracks = track_repo
         self.logger = self._setup_logger()
     
     def _setup_logger(self) -> logging.Logger:
@@ -217,7 +219,14 @@ class CleanupService:
                 all_files,
                 cleanup_settings.RETENTION_HOURS
             )
-            
+
+            # Las pistas kept de la biblioteca (audio y sidecar) no se tocan nunca
+            protected = self._kept_track_files()
+            kept_count = len([f for f in eligible_files if f.resolve() in protected])
+            eligible_files = [f for f in eligible_files if f.resolve() not in protected]
+            if kept_count:
+                self.logger.info(f"Skipped (kept tracks): {kept_count} files")
+
             self.logger.info(f"Eligible for deletion: {len(eligible_files)} files (older than {cleanup_settings.RETENTION_HOURS}h)")
             
             # Eliminar archivos
@@ -230,6 +239,7 @@ class CleanupService:
                     
                     if not dry_run:
                         file_path.unlink()
+                        self._forget_track(file_path)
                         files_deleted += 1
                         space_freed += size_mb
                     else:
@@ -628,6 +638,20 @@ class CleanupService:
     
     # === Métodos privados ===
     
+    def _kept_track_files(self) -> set:
+        """Rutas resueltas del audio y el sidecar de cada pista kept."""
+        protected = set()
+        for audio in self.tracks.kept_paths():
+            protected.add(Path(audio).resolve())
+            protected.add(track_metadata.sidecar_path(Path(audio)).resolve())
+        return protected
+
+    def _forget_track(self, file_path: Path) -> None:
+        """Si el archivo borrado era el audio de una pista, elimina su fila y su portada en caché."""
+        track_id = self.tracks.delete_by_path(file_path)
+        if track_id:
+            (settings.DOWNLOAD_DIR / ".covers" / f"{track_id}.jpg").unlink(missing_ok=True)
+
     def _get_files_by_age(self, files: List[Path], max_age_hours: float) -> List[Path]:
         """Filtra archivos por edad."""
         eligible = []

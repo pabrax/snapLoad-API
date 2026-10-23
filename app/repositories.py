@@ -884,6 +884,11 @@ class TrackRepository(BaseRepository):
         finally:
             con.close()
 
+    def delete_by_path(self, path: Path) -> Optional[str]:
+        """Elimina la pista de ese audio; devuelve su id, o None si no había ninguna."""
+        track_id = track_id_for(Path(path))
+        return track_id if self.delete(track_id) else None
+
     def all_files(self) -> "List[tuple[str, str, Optional[str]]]":
         """(id, ruta, job_id) de todas las pistas, para comprobar que sus archivos siguen en disco."""
         con = self._connect()
