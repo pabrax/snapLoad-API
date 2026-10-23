@@ -145,3 +145,51 @@ def test_id_with_separators_404(client, bad_id):
 ])
 def test_parse_range(header, size, expected):
     assert parse_range(header, size) == expected
+
+
+# --- GET /library/tracks/{id}/cover ---
+
+import subprocess
+
+from app.core.process import find_binary, resolve_binary
+from app.services import library_service
+
+needs_ffmpeg = pytest.mark.skipif(
+    not (find_binary("ffmpeg") and find_binary("ffprobe")), reason="ffmpeg/ffprobe not installed"
+)
+
+
+def _audio_with_cover(folder, with_cover=True):
+    folder.mkdir(parents=True, exist_ok=True)
+    jpg, out = folder / "cover.jpg", folder / "song.mp3"
+    ff = [resolve_binary("ffmpeg"), "-v", "error", "-y"]
+    subprocess.run([*ff, "-f", "lavfi", "-i", "color=c=red:s=64x64:d=1", "-frames:v", "1", str(jpg)], check=True)
+    tone = ["-f", "lavfi", "-i", "sine=frequency=440:duration=1"]
+    if with_cover:
+        subprocess.run([*ff, *tone, "-i", str(jpg), "-map", "0", "-map", "1", "-c:a", "libmp3lame", "-c:v", "copy",
+                        "-id3v2_version", "3", "-disposition:v", "attached_pic", str(out)], check=True)
+    else:
+        subprocess.run([*ff, *tone, str(out)], check=True)
+    return out
+
+
+@needs_ffmpeg
+def test_cover_served_with_image_type(client, sandbox):
+    audio = _audio_with_cover(sandbox / "download" / "audio")
+    track_id = library_service.register_track(audio, fmt="mp3")
+
+    res = client.get(f"/library/tracks/{track_id}/cover")
+
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "image/jpeg"
+    assert res.content[:3] == b"\xff\xd8\xff"
+    assert client.get(f"/library/tracks/{track_id}/cover").content == res.content  # cached copy
+
+
+@needs_ffmpeg
+def test_cover_404_when_none(client, sandbox):
+    audio = _audio_with_cover(sandbox / "download" / "audio", with_cover=False)
+    track_id = library_service.register_track(audio, fmt="mp3")
+
+    assert client.get(f"/library/tracks/{track_id}/cover").status_code == 404
+    assert client.get(f"/library/tracks/{'0' * 16}/cover").status_code == 404

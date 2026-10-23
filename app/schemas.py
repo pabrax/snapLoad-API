@@ -188,6 +188,28 @@ class TrackEntry(BaseModel):
     tags_source: Optional[str] = None
 
 
+class TrackResponse(BaseModel):
+    """Pista de la biblioteca tal como la ve el cliente (sin rutas del servidor)."""
+    id: str
+    title: Optional[str] = None
+    artist: Optional[str] = None
+    album: Optional[str] = None
+    duration_s: Optional[float] = None
+    format: Optional[str] = None
+    size_bytes: int = 0
+    has_cover: bool = False
+    kept: bool = False
+
+
+class TrackListResponse(BaseModel):
+    """Página de la biblioteca."""
+    tracks: List[TrackResponse]
+    total: int = Field(..., description="Total de pistas que cumplen la búsqueda")
+    limit: int
+    offset: int
+    kept_bytes: int = Field(..., description="Bytes ocupados por las pistas kept")
+
+
 # === Internal Models ===
 
 class QualityConfig(BaseModel):

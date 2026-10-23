@@ -884,6 +884,14 @@ class TrackRepository(BaseRepository):
         finally:
             con.close()
 
+    def all_files(self) -> "List[tuple[str, str, Optional[str]]]":
+        """(id, ruta, job_id) de todas las pistas, para comprobar que sus archivos siguen en disco."""
+        con = self._connect()
+        try:
+            return [tuple(r) for r in con.execute("SELECT id, path, job_id FROM tracks")]
+        finally:
+            con.close()
+
     def kept_bytes(self) -> int:
         """Suma de bytes de las pistas kept."""
         con = self._connect()

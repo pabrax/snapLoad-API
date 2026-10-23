@@ -75,3 +75,22 @@ def backfill(limit: int = BACKFILL_BATCH) -> int:
             register_track(path, job_id=entry.job_id, kept=False)
             registered += 1
     return registered
+
+
+def prune_missing() -> int:
+    """
+    Quita de la biblioteca las pistas cuyo archivo ya no existe y marca su descarga como fallida
+    en el índice (así la caché no la da por lista).
+
+    Returns:
+        Número de pistas retiradas
+    """
+    pruned = 0
+    for track_id, path, job_id in track_repo.all_files():
+        if Path(path).is_file():
+            continue
+        track_repo.delete(track_id)
+        if job_id:
+            download_index_repo.register_failed(job_id, f"missing_files:['{path}']")
+        pruned += 1
+    return pruned

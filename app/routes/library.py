@@ -5,15 +5,17 @@ Sirve las pistas de audio descargadas para reproducirlas en el navegador.
 import re
 import urllib.parse
 from pathlib import Path as _Path
-from typing import Iterator
+from typing import Iterator, Optional
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from ..core.config import settings
 from ..core.http_range import UNSATISFIABLE, parse_range
 from ..helpers import FileNameHelper
 from ..repositories import track_repo
+from ..schemas import TrackListResponse, TrackResponse
+from ..services import library_service, track_metadata
 
 router = APIRouter(prefix="/library", tags=["library"])
 
@@ -104,4 +106,45 @@ def stream_track(track_id: str, request: Request):
         status_code=status,
         media_type=media_type,
         headers=headers,
+    )
+
+
+@router.get("/tracks", response_model=TrackListResponse)
+def list_tracks(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    q: Optional[str] = Query(None, description="Búsqueda en título o artista"),
+):
+    """
+    Lista las pistas de audio descargadas, las más recientes primero.
+    """
+    library_service.backfill()
+    library_service.prune_missing()
+    tracks, total = track_repo.list(limit=limit, offset=offset, q=q)
+    return TrackListResponse(
+        tracks=[TrackResponse(**t.model_dump(include=set(TrackResponse.model_fields))) for t in tracks],
+        total=total,
+        limit=limit,
+        offset=offset,
+        kept_bytes=track_repo.kept_bytes(),
+    )
+
+
+@router.get("/tracks/{track_id}/cover")
+def track_cover(track_id: str):
+    """
+    Sirve la portada embebida de una pista (se extrae una vez y se cachea).
+    """
+    audio = _get_track_file(track_id)
+    track = track_repo.get(track_id)
+    if not track.has_cover:
+        raise HTTPException(status_code=404, detail="la pista no tiene portada")
+
+    cover = settings.DOWNLOAD_DIR / ".covers" / f"{track_id}.jpg"
+    if not cover.is_file() and not track_metadata.extract_cover(audio, cover):
+        raise HTTPException(status_code=404, detail="la pista no tiene portada")
+    return FileResponse(
+        path=str(cover),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=86400"},
     )
