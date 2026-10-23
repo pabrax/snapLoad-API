@@ -201,3 +201,51 @@ def test_kept_bytes_sum(client):
     _add("c.mp3", size=1_000, kept=False)
 
     assert client.get("/library/tracks").json()["kept_bytes"] == 10_000_000
+
+
+# --- DELETE /library/tracks/{id} ---
+
+
+def test_delete_removes_files_and_records(client):
+    track_id = _ready("a.mp3", job="jobA", title="A")
+    audio = settings.DOWNLOAD_DIR / "audio" / "a.mp3"
+    sidecar = audio.with_name("a.mp3.meta.json")
+    sidecar.write_text("{}")
+    cover = settings.DOWNLOAD_DIR / ".covers" / f"{track_id}.jpg"
+    cover.parent.mkdir(parents=True)
+    cover.write_bytes(b"jpg")
+    other = _ready("b.mp3", title="B")
+
+    res = client.delete(f"/library/tracks/{track_id}")
+
+    assert res.status_code == 204 and res.content == b""
+    assert not audio.exists() and not sidecar.exists() and not cover.exists()
+    assert track_repo.get(track_id) is None and track_repo.get(other) is not None
+    assert download_index_repo.find_by_job_id("jobA") is None
+    assert [t["title"] for t in client.get("/library/tracks").json()["tracks"]] == ["B"]
+
+
+def test_delete_keeps_the_index_entry_while_other_files_of_the_job_remain(client):
+    first = _add("one.mp3", job_id="playlist")
+    _add("two.mp3", job_id="playlist")
+    files = [str(settings.DOWNLOAD_DIR / "audio" / n) for n in ("one.mp3", "two.mp3")]
+    download_index_repo.upsert_ready("https://youtu.be/pl", "audio", "best", "mp3", files, "2026-01-01T00:00:00Z", job_id="playlist")
+
+    assert client.delete(f"/library/tracks/{first}").status_code == 204
+
+    assert download_index_repo.find_by_job_id("playlist") is not None
+
+
+def test_delete_unknown_404(client):
+    assert client.delete(f"/library/tracks/{'0' * 16}").status_code == 404
+    assert client.delete("/library/tracks/not-an-id").status_code == 404
+
+
+def test_delete_never_touches_files_outside_downloads(client, sandbox):
+    outside = sandbox / "outside" / "precious.mp3"
+    outside.parent.mkdir()
+    outside.write_bytes(b"keep me")
+    track_id = track_repo.upsert(path=outside, fmt="mp3", size_bytes=7)
+
+    assert client.delete(f"/library/tracks/{track_id}").status_code == 403
+    assert outside.read_bytes() == b"keep me"

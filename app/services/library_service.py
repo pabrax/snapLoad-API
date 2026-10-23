@@ -94,3 +94,28 @@ def prune_missing() -> int:
             download_index_repo.register_failed(job_id, f"missing_files:['{path}']")
         pruned += 1
     return pruned
+
+
+def delete_track(track_id: str) -> bool:
+    """
+    Borra una pista: audio, sidecar, portada en caché, su fila y la entrada del índice de descargas
+    cuando ya no queda en disco ningún archivo de ese job (un job de playlist puede tener varios).
+
+    El llamador debe haber comprobado que la ruta está bajo DOWNLOAD_DIR.
+
+    Returns:
+        True si la pista existía
+    """
+    track = track_repo.get(track_id)
+    if track is None:
+        return False
+
+    audio = Path(track.path)
+    for target in (audio, track_metadata.sidecar_path(audio), settings.DOWNLOAD_DIR / ".covers" / f"{track_id}.jpg"):
+        target.unlink(missing_ok=True)
+    track_repo.delete(track_id)
+
+    entry = download_index_repo.find_by_job_id(track.job_id) if track.job_id else None
+    if entry and not any(Path(f).exists() for f in entry.files):
+        download_index_repo.delete_entry(entry.url, entry.type, entry.quality, entry.format)
+    return True

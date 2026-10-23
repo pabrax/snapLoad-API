@@ -8,13 +8,14 @@ from pathlib import Path as _Path
 from typing import Iterator, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, StrictBool
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from ..core.config import settings
 from ..core.http_range import UNSATISFIABLE, parse_range
 from ..helpers import FileNameHelper
 from ..repositories import track_repo
-from ..schemas import TrackListResponse, TrackResponse
+from ..schemas import TrackEntry, TrackListResponse, TrackResponse
 from ..services import library_service, track_metadata
 
 router = APIRouter(prefix="/library", tags=["library"])
@@ -33,25 +34,40 @@ AUDIO_MIME_TYPES = {
 }
 
 
-def _get_track_file(track_id: str) -> _Path:
+class KeptUpdate(BaseModel):
+    """Cuerpo de PATCH /library/tracks/{id}; `kept` debe ser un booleano real."""
+    kept: StrictBool
+
+
+def _get_track(track_id: str) -> TrackEntry:
     """
-    Resuelve el archivo de una pista desde su registro, nunca desde datos del cliente.
+    Busca una pista por id (nunca por datos del cliente) y comprueba que su ruta registrada
+    queda bajo DOWNLOAD_DIR.
 
     Raises:
-        HTTPException: 404 si el id no es válido, no existe o el archivo falta; 403 si la
-            ruta registrada queda fuera de DOWNLOAD_DIR
+        HTTPException: 404 si el id no es válido o no existe; 403 si la ruta queda fuera
     """
     if not TRACK_ID_PATTERN.match(track_id):
         raise HTTPException(status_code=404, detail="pista no encontrada")
     track = track_repo.get(track_id)
     if not track:
         raise HTTPException(status_code=404, detail="pista no encontrada")
-
-    file_path = _Path(track.path)
     try:
-        file_path.resolve().relative_to(settings.DOWNLOAD_DIR.resolve())
+        _Path(track.path).resolve().relative_to(settings.DOWNLOAD_DIR.resolve())
     except ValueError:
         raise HTTPException(status_code=403, detail="Acceso denegado")
+    return track
+
+
+def _get_track_file(track_id: str) -> _Path:
+    """
+    Resuelve el archivo de una pista desde su registro.
+
+    Raises:
+        HTTPException: 404 si el id no es válido, no existe o el archivo falta; 403 si la
+            ruta registrada queda fuera de DOWNLOAD_DIR
+    """
+    file_path = _Path(_get_track(track_id).path)
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="archivo no encontrado")
     return file_path
@@ -109,6 +125,11 @@ def stream_track(track_id: str, request: Request):
     )
 
 
+def _to_response(track: TrackEntry) -> TrackResponse:
+    """Proyecta una pista a lo que ve el cliente (sin rutas del servidor)."""
+    return TrackResponse(**track.model_dump(include=set(TrackResponse.model_fields)))
+
+
 @router.get("/tracks", response_model=TrackListResponse)
 def list_tracks(
     limit: int = Query(50, ge=1, le=200),
@@ -122,7 +143,7 @@ def list_tracks(
     library_service.prune_missing()
     tracks, total = track_repo.list(limit=limit, offset=offset, q=q)
     return TrackListResponse(
-        tracks=[TrackResponse(**t.model_dump(include=set(TrackResponse.model_fields))) for t in tracks],
+        tracks=[_to_response(t) for t in tracks],
         total=total,
         limit=limit,
         offset=offset,
@@ -148,3 +169,22 @@ def track_cover(track_id: str):
         media_type="image/jpeg",
         headers={"Cache-Control": "private, max-age=86400"},
     )
+
+
+@router.patch("/tracks/{track_id}", response_model=TrackResponse)
+def update_track(track_id: str, body: KeptUpdate):
+    """
+    Marca o desmarca una pista como kept (protegida de la limpieza automática).
+    """
+    _get_track(track_id)
+    return _to_response(track_repo.set_kept(track_id, body.kept))
+
+
+@router.delete("/tracks/{track_id}", status_code=204)
+def delete_track(track_id: str):
+    """
+    Elimina una pista: su audio, sidecar, portada en caché y registros.
+    """
+    _get_track(track_id)
+    library_service.delete_track(track_id)
+    return Response(status_code=204)

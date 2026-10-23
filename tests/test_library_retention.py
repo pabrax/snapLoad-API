@@ -123,3 +123,48 @@ def test_backfill_is_bounded_per_call(sandbox):
     assert library_service.backfill(limit=2) == 2
     assert library_service.backfill(limit=10) == 3
     assert library_service.backfill() == 0
+
+
+# --- PATCH /library/tracks/{id} ---
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.api import app
+
+
+@pytest.fixture
+def client(sandbox):
+    return TestClient(app)
+
+
+def _track(kept):
+    path = settings.DOWNLOAD_DIR / "audio" / "a.mp3"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x")
+    return track_repo.upsert(path=path, job_id="j", fmt="mp3", size_bytes=1, title="A", kept=kept)
+
+
+def test_patch_unkeep(client):
+    track_id = _track(kept=True)
+
+    res = client.patch(f"/library/tracks/{track_id}", json={"kept": False})
+
+    assert res.status_code == 200
+    assert res.json()["kept"] is False and res.json()["id"] == track_id and "path" not in res.json()
+    assert track_repo.get(track_id).kept is False
+
+    assert client.patch(f"/library/tracks/{track_id}", json={"kept": True}).json()["kept"] is True
+
+
+@pytest.mark.parametrize("body", [{"kept": "yes"}, {"kept": 1}, {}, {"kept": None}])
+def test_patch_invalid_body_422(client, body):
+    track_id = _track(kept=True)
+
+    assert client.patch(f"/library/tracks/{track_id}", json=body).status_code == 422
+    assert track_repo.get(track_id).kept is True
+
+
+def test_patch_unknown_track_404(client):
+    assert client.patch(f"/library/tracks/{'0' * 16}", json={"kept": True}).status_code == 404
+    assert client.patch("/library/tracks/zzz", json={"kept": True}).status_code == 404
