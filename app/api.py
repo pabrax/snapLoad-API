@@ -10,6 +10,7 @@ from .core.config import settings, cleanup_settings
 from .routes.health import router as health_router
 from .routes.download import router as download_router
 from .routes.files import router as files_router
+from .routes.library import router as library_router
 
 # Configurar logger
 logger = logging.getLogger(__name__)
@@ -78,6 +79,7 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(download_router)
 app.include_router(files_router)
+app.include_router(library_router)
 
 # Incluir admin router solo si está habilitado
 if cleanup_settings.ENABLE_ADMIN_ENDPOINTS:
