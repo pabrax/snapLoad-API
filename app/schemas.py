@@ -171,6 +171,23 @@ class DownloadIndexEntry(BaseModel):
     error: Optional[str] = None
 
 
+class TrackEntry(BaseModel):
+    """Pista de audio de la biblioteca (tags cacheados y marca kept)."""
+    id: str
+    job_id: Optional[str] = None
+    path: str
+    title: Optional[str] = None
+    artist: Optional[str] = None
+    album: Optional[str] = None
+    duration_s: Optional[float] = None
+    format: Optional[str] = None
+    size_bytes: int = 0
+    has_cover: bool = False
+    kept: bool = False
+    mtime: float = 0.0
+    tags_source: Optional[str] = None
+
+
 # === Internal Models ===
 
 class QualityConfig(BaseModel):
