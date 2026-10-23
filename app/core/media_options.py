@@ -24,13 +24,14 @@ _BEST_ALIASES = {"", "0", "best", "bestaudio"}
 # lossless: sin pérdida, el bitrate no aplica. native: YouTube ya entrega ese códec y se copia
 # el stream original, así que tampoco hay bitrate que elegir (verificado con ffprobe: opus 48 = 320 = best).
 # aac se omite a propósito: yt-dlp lo entrega en un .m4a idéntico al formato m4a.
+# cover: el contenedor admite una imagen incrustada (yt-dlp sale con código 1 si se le pide en wav).
 AUDIO_FORMATS = {
-    "mp3": {"ytdlp": "mp3", "spotdl": "mp3", "lossless": False, "native": False},
-    "m4a": {"ytdlp": "m4a", "spotdl": "m4a", "lossless": False, "native": False},
-    "opus": {"ytdlp": "opus", "spotdl": "opus", "lossless": False, "native": True},
-    "ogg": {"ytdlp": "vorbis", "spotdl": "ogg", "lossless": False, "native": False},
-    "flac": {"ytdlp": "flac", "spotdl": "flac", "lossless": True, "native": False},
-    "wav": {"ytdlp": "wav", "spotdl": "wav", "lossless": True, "native": False},
+    "mp3": {"ytdlp": "mp3", "spotdl": "mp3", "lossless": False, "native": False, "cover": True},
+    "m4a": {"ytdlp": "m4a", "spotdl": "m4a", "lossless": False, "native": False, "cover": True},
+    "opus": {"ytdlp": "opus", "spotdl": "opus", "lossless": False, "native": True, "cover": True},
+    "ogg": {"ytdlp": "vorbis", "spotdl": "ogg", "lossless": False, "native": False, "cover": True},
+    "flac": {"ytdlp": "flac", "spotdl": "flac", "lossless": True, "native": False, "cover": True},
+    "wav": {"ytdlp": "wav", "spotdl": "wav", "lossless": True, "native": False, "cover": False},
 }
 
 

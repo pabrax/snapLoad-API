@@ -161,7 +161,9 @@ class BaseDownloadService(ABC):
             self.job_manager.unregister_job(job_id)
             
             cancelled = self.job_manager.consume_cancelled(job_id)
-            success = process.returncode == 0 and not cancelled
+            success = not cancelled and self._process_succeeded(
+                process.returncode, raw_output, paths["temp_dir"]
+            )
 
             # Un job cancelado no conserva resultados parciales
             moved_files = [] if cancelled else self._move_files(paths["temp_dir"], paths["download_dir"])
@@ -279,9 +281,16 @@ class BaseDownloadService(ABC):
     def _move_files(self, temp_dir: Path, download_dir: Path) -> List[FileInfo]:
         """Mueve los archivos desde el directorio temporal al final."""
         return self.file_manager.move_files_to_destination(
-            temp_dir, download_dir, self.get_file_extensions()
+            temp_dir, download_dir, self.get_file_extensions(), on_moved=self._after_move
         )
-    
+
+    def _process_succeeded(self, returncode: int, raw_output: str, temp_dir: Path) -> bool:
+        """Indica si el proceso terminó bien; por defecto, código de salida 0."""
+        return returncode == 0
+
+    def _after_move(self, source: Path, destination: Path) -> None:
+        """Gancho tras mover cada archivo (origen en temp, destino final); por defecto no hace nada."""
+
     def _extract_error_from_output(self, output: str) -> str:
         """Extrae un mensaje de error relevante de la salida."""
         if not output:

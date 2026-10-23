@@ -13,6 +13,7 @@ from ..core.media_options import AUDIO_FORMATS, resolve_audio_options
 from ..core.process import resolve_binary
 from ..core.video_options import resolve_video_options
 from ..validators import URLValidator
+from . import track_metadata
 
 
 class YouTubeAudioService(BaseDownloadService):
@@ -76,9 +77,37 @@ class YouTubeAudioService(BaseDownloadService):
         if audio_quality is not None:
             cmd += ["--audio-quality", audio_quality]
 
+        # Tags en el archivo + info.json para el sidecar de la biblioteca; la portada solo donde cabe
+        cmd += ["--embed-metadata", "--no-embed-info-json", "--write-info-json"]
+        if AUDIO_FORMATS[opts.format]["cover"]:
+            cmd += ["--embed-thumbnail", "--convert-thumbnails", "jpg"]
+
         cmd += ["-o", output_template, url]
 
         return cmd
+
+    def _process_succeeded(self, returncode: int, raw_output: str, temp_dir: Path) -> bool:
+        """
+        yt-dlp sale con código 1 si falla solo el embebido de portada/tags, pero el audio ya existe.
+        Ese caso no debe tumbar la descarga; cualquier otro error sí.
+        """
+        if returncode == 0:
+            return True
+        errors = [l for l in raw_output.splitlines() if l.startswith("ERROR")]
+        only_embed_errors = bool(errors) and all(
+            l.startswith("ERROR: Postprocessing:") and ("thumbnail" in l.lower() or "metadata" in l.lower())
+            for l in errors
+        )
+        has_audio = any(
+            p.is_file() and p.suffix.lower() in self.get_file_extensions() for p in temp_dir.rglob("*")
+        )
+        return only_embed_errors and has_audio
+
+    def _after_move(self, source: Path, destination: Path) -> None:
+        """Escribe el sidecar de metadatos junto al audio a partir del info.json de yt-dlp."""
+        info_path = source.with_suffix(".info.json")
+        if info_path.is_file():
+            track_metadata.write_sidecar_from_info(info_path, destination)
 
 
 class YouTubeVideoService(BaseDownloadService):

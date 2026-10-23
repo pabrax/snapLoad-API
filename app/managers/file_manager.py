@@ -5,7 +5,7 @@ Centraliza las operaciones con archivos y metadatos de jobs.
 import json
 import shutil
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Callable
 
 from ..core.config import settings
 from ..core.exceptions import FileNotFoundException, JobNotFoundException
@@ -23,16 +23,19 @@ class FileManager:
     def move_files_to_destination(
         source_folder: Path,
         destination_folder: Path,
-        file_extensions: set
+        file_extensions: set,
+        on_moved: Optional[Callable[[Path, Path], None]] = None
     ) -> List[FileInfo]:
         """
         Mueve archivos de una carpeta temporal a su destino final.
-        
+
         Args:
             source_folder: Carpeta origen
             destination_folder: Carpeta destino
             file_extensions: Set de extensiones a mover
-            
+            on_moved: Callback (origen, destino) tras mover cada archivo; sus errores no
+                interrumpen la descarga
+
         Returns:
             Lista de FileInfo con los archivos movidos
         """
@@ -51,7 +54,13 @@ class FileManager:
                 
                 # Mover archivo
                 shutil.move(str(file_path), str(dest))
-                
+
+                if on_moved:
+                    try:
+                        on_moved(file_path, dest)
+                    except Exception:
+                        pass
+
                 moved_files.append(FileInfo(
                     name=dest.name,
                     path=str(dest),

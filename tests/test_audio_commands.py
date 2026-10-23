@@ -95,3 +95,20 @@ def test_ytdlp_prefers_the_native_source_stream_so_it_can_be_copied():
     assert selector(quality="best", format="m4a") == "bestaudio[ext=m4a]/bestaudio/best"
     assert selector(quality="best", format="opus") == "bestaudio[acodec=opus]/bestaudio/best"
     assert selector(quality="128", format="mp3") == "bestaudio/best"
+
+
+def test_ytdlp_embeds_metadata_and_cover_for_formats_that_hold_pictures():
+    for fmt in ("mp3", "m4a", "opus", "ogg", "flac"):
+        args = yt(quality="best", format=fmt)
+        assert "--embed-metadata" in args and "--write-info-json" in args
+        assert "--embed-thumbnail" in args
+        assert args[args.index("--convert-thumbnails") + 1] == "jpg"
+        assert "--no-embed-info-json" in args
+        assert args[-3:-1] == ["-o", str(OUT / "%(title)s.%(ext)s")]
+
+
+def test_ytdlp_wav_gets_tags_and_info_but_never_a_thumbnail():
+    """yt-dlp exits 1 when asked to embed a thumbnail into wav (verified with 2026.08.19)."""
+    args = yt(quality="lossless", format="wav")
+    assert "--embed-metadata" in args and "--write-info-json" in args
+    assert "--embed-thumbnail" not in args and "--convert-thumbnails" not in args
