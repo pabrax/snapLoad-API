@@ -17,6 +17,7 @@ from ..core.exceptions import InvalidURLException
 from ..core.media_options import AUDIO_FORMATS, resolve_audio_options
 from ..core.process import resolve_binary
 from ..validators import URLValidator
+from . import track_metadata
 
 
 class SpotifyDownloadService(BaseDownloadService):
@@ -78,6 +79,10 @@ class SpotifyDownloadService(BaseDownloadService):
         ]
 
         return cmd
+
+    def _after_move(self, source: Path, destination: Path) -> None:
+        """spotdl embebe tags y portada pero no deja info.json: el sidecar se deriva de los tags."""
+        track_metadata.write_sidecar_from_tags(destination)
 
 
 # Instancia global
