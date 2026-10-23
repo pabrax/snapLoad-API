@@ -15,6 +15,7 @@ from ..schemas import JobMetadata, FileInfo
 from ..managers import job_manager, file_manager, metadata_manager
 from ..helpers import DateTimeHelper, TextHelper
 from ..repositories import download_index_repo, media_repo
+from . import library_service
 
 
 class BaseDownloadService(ABC):
@@ -405,7 +406,15 @@ class BaseDownloadService(ABC):
         except Exception:
             # No fallar si el registro en catálogo falla
             pass
-    
+
+        if self.get_media_type() == MediaType.AUDIO:
+            try:
+                for file_info in moved_files:
+                    library_service.register_track(Path(file_info.path), job_id=job_id, fmt=format_)
+            except Exception:
+                # La biblioteca se puede reconstruir (backfill): no fallar la descarga por ella
+                pass
+
     def _handle_validation_error(
         self,
         url: str,

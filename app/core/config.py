@@ -20,7 +20,10 @@ class Settings:
     # Extensiones de archivos
     AUDIO_EXTENSIONS: Set[str] = {".mp3", ".m4a", ".flac", ".wav", ".aac", ".ogg", ".opus"}
     VIDEO_EXTENSIONS: Set[str] = {".webm", ".mp4", ".mkv", ".mov", ".avi"}
-    
+
+    # Biblioteca: las descargas de audio nuevas quedan protegidas de la limpieza hasta que se borren
+    LIBRARY_AUTO_KEEP: bool = os.getenv("LIBRARY_AUTO_KEEP", "true").lower() == "true"
+
     # Formatos válidos
     VALID_VIDEO_FORMATS: Set[str] = {"webm", "mp4", "mkv", "mov", "avi"}
     
