@@ -36,24 +36,24 @@ def _run(service, job_id, media="audio", quality="best", fmt="mp3"):
     service.download_sync(URL, job_id=job_id, quality=quality, format=fmt)
 
 
-def test_auto_keep_default_true(sandbox):
-    assert settings.LIBRARY_AUTO_KEEP is True
+def test_auto_keep_default_false(sandbox):
+    assert settings.LIBRARY_AUTO_KEEP is False
 
     _run(OneFileAudio(), "job1")
 
     tracks, total = track_repo.list()
     assert total == 1
     track = tracks[0]
-    assert (track.kept, track.job_id, track.format, track.size_bytes) == (True, "job1", "mp3", 10)
+    assert (track.kept, track.job_id, track.format, track.size_bytes) == (False, "job1", "mp3", 10)
     assert Path(track.path).name == "Song.mp3" and track.title == "Song"
 
 
-def test_auto_keep_false(sandbox, monkeypatch):
-    monkeypatch.setattr(settings, "LIBRARY_AUTO_KEEP", False)
+def test_auto_keep_opt_in(sandbox, monkeypatch):
+    monkeypatch.setattr(settings, "LIBRARY_AUTO_KEEP", True)
 
     _run(OneFileAudio(), "job1")
 
-    assert track_repo.list()[0][0].kept is False
+    assert track_repo.list()[0][0].kept is True
 
 
 def test_video_downloads_are_not_registered(sandbox):

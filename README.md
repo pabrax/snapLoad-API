@@ -178,7 +178,7 @@ CLEANUP_CRON="0 * * * *"             # Clean every hour
 TEMP_CLEANUP_CRON="0 */2 * * *"      # Clean temp every 2 hours
 
 # Music library
-LIBRARY_AUTO_KEEP=true               # New audio downloads are kept (exempt from RETENTION_HOURS) until you delete them; false = they expire like any other file
+LIBRARY_AUTO_KEEP=false              # false (default) = they expire like any other file; true = new audio downloads are kept (exempt from RETENTION_HOURS) until you delete them. Enable only for local use
 
 # Admin Endpoints (Disable in production)
 ENABLE_ADMIN_ENDPOINTS=false         # Set to true only for testing/development
@@ -391,7 +391,7 @@ DELETE /library/tracks/{id}                        # delete audio, sidecar and r
 
 `GET /library/tracks` returns `{"tracks": [{"id", "title", "artist", "album", "duration_s", "format", "size_bytes", "has_cover", "kept"}], "total", "limit", "offset", "kept_bytes"}`. Ids are opaque (16 hex chars).
 
-Tracks flagged `kept` are skipped by the cleanup; new audio downloads are kept by default (`LIBRARY_AUTO_KEEP=true`). Tags come from the file, then from a `<file>.meta.json` sidecar, then from the file name. wav files carry no cover.
+Tracks flagged `kept` are skipped by the cleanup; new audio downloads are kept only if you enable `LIBRARY_AUTO_KEEP=true` (off by default; leave it off on a public demo). Tags come from the file, then from a `<file>.meta.json` sidecar, then from the file name. wav files carry no cover.
 
 ---
 
