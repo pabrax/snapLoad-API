@@ -625,3 +625,49 @@ def test_job_tags_replaygain_before_publishing(sandbox, monkeypatch):
     tags = track_metadata._embedded(track_metadata.probe(Path(entry.files[0])))
     assert "replaygain_track_gain" in tags
     assert track_repo.list()[0][0].replaygain_db is not None
+
+
+# --- re-review fixes: no copy on same-volume moves, reserved names with dots, no empty leftovers -------
+
+
+def test_same_volume_move_is_a_rename_not_a_copy(tmp_path):
+    """On Windows shutil.move onto the reserved placeholder falls back to copy+delete: huge files would be copied.
+    A rename keeps the file identity; a copy creates a new file."""
+    import os
+    src = _tmp_audio(tmp_path / "tmp", data=b"big")
+    identity = os.stat(src).st_ino
+
+    moved = FileManager.move_files_to_destination(src.parent, tmp_path / "dest", {".mp3"})
+
+    assert len(moved) == 1 and Path(moved[0].path).read_bytes() == b"big"
+    assert os.stat(moved[0].path).st_ino == identity, "the file was copied instead of renamed"
+    assert not src.exists()
+
+
+def test_failed_move_leaves_no_placeholder_or_empty_folders(tmp_path, monkeypatch):
+    import importlib
+    fm = importlib.import_module("app.managers.file_manager")   # the package re-exports an instance under the same name
+    dest = tmp_path / "dest"
+    real_claim = fm._claim_path
+
+    def claim(path):
+        if "Artist" in path.parts:
+            raise OSError("disk says no")
+        return real_claim(path)
+
+    monkeypatch.setattr(fm, "_claim_path", claim)
+    moved = FileManager.move_files_to_destination(
+        _tmp_audio(tmp_path / "tmp").parent, dest, {".mp3"},
+        prepare=lambda f: enrichment.Placement(Path("Artist") / "Album", "01 - a.mp3"))
+
+    assert Path(moved[0].path).parent == dest
+    assert not (dest / "Artist").exists(), "empty Artist/Album folders must not be left behind"
+    assert [p.name for p in dest.iterdir()] == ["a.mp3"]
+
+
+@pytest.mark.parametrize("raw", ["CON .txt", "CON.x", "con.", "NUL .x", "CONIN$", "aux.tar.gz", "COM1.txt"])
+def test_reserved_device_names_are_not_reserved_after_sanitizing(raw):
+    """Windows treats CON.x and 'CON .txt' as the CON device: the guard must sit before the first dot."""
+    reserved = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+    safe = enrichment.safe_component(raw)
+    assert safe.split(".")[0].strip().upper() not in reserved, safe

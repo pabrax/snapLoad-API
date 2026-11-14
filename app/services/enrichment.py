@@ -44,7 +44,11 @@ def safe_component(text: Optional[str]) -> str:
     name = re.sub(r'[<>:"|?*]+', "_", name).rstrip(" .")
     if not name:
         return "_"
-    return f"{name}_" if name.split(".")[0].strip().upper() in _WINDOWS_RESERVED else name
+    # Windows trata "CON.x" y "CON .txt" como el dispositivo CON: la guarda va antes del primer punto
+    base, dot, rest = name.partition(".")
+    if base.strip().upper() in _WINDOWS_RESERVED:
+        return f"{base.strip()}_{dot}{rest}"
+    return name
 
 
 def build_placement(

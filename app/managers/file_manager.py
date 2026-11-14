@@ -3,6 +3,7 @@ Gestor de archivos y metadatos.
 Centraliza las operaciones con archivos y metadatos de jobs.
 """
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable
@@ -30,10 +31,29 @@ def _claim_path(path: Path) -> Path:
             counter += 1
 
 
+def _prune_empty(folder: Path, stop: Path) -> None:
+    """Borra `folder` y sus padres hasta `stop` (sin incluirlo) mientras estén vacíos; nunca toca contenido."""
+    while folder != stop and stop in folder.parents:
+        try:
+            folder.rmdir()
+        except OSError:
+            return
+        folder = folder.parent
+
+
 def _move_claimed(source: Path, claimed: Path) -> None:
-    """Mueve `source` sobre el nombre reservado; si falla, libera la reserva."""
+    """
+    Mueve `source` sobre el nombre reservado; si falla, libera la reserva.
+
+    `os.replace` sustituye el marcador vacío de forma atómica (en Windows `shutil.move` sobre un archivo
+    existente copiaría y borraría, y un vídeo de varios GB necesitaría el doble de espacio). Solo si el
+    destino está en otro volumen se recurre a copiar y borrar.
+    """
     try:
-        shutil.move(str(source), str(claimed))
+        try:
+            os.replace(str(source), str(claimed))
+        except OSError:
+            shutil.move(str(source), str(claimed))
     except OSError:
         claimed.unlink(missing_ok=True)
         raise
@@ -104,8 +124,10 @@ class FileManager:
                 except OSError:
                     if target_folder == destination_folder:
                         raise
-                    # Ruta demasiado larga o carpeta imposible: mejor plano que perder la descarga
-                    dest = _claim_path(destination_folder / FileNameHelper.sanitize_filename(file_path.name))
+                    # Ruta demasiado larga o carpeta imposible: mejor plano que perder la descarga.
+                    # Antes se quitan las carpetas vacías que se acaban de crear.
+                    _prune_empty(target_folder, destination_folder)
+                    dest =_claim_path(destination_folder / FileNameHelper.sanitize_filename(file_path.name))
                     _move_claimed(file_path, dest)
                 
                 if on_moved:
