@@ -179,6 +179,9 @@ TEMP_CLEANUP_CRON="0 */2 * * *"      # Clean temp every 2 hours
 
 # Music library
 LIBRARY_AUTO_KEEP=false              # false (default) = they expire like any other file; true = new audio downloads are kept (exempt from RETENTION_HOURS) until you delete them. Enable only for local use
+MUSICBRAINZ_ENABLED=false            # true = look new audio up on MusicBrainz and write clean tags + cover art (external connection, off by default)
+MUSICBRAINZ_CONTACT=                 # optional, added to the User-Agent (MusicBrainz asks for a way to reach you); empty = just "SnapLoad/<version>"
+LIBRARY_LAYOUT=flat                  # flat (default) or artist-album: NEW audio goes to Artist/Album/NN - Title.ext; existing files are never moved
 
 # Admin Endpoints (Disable in production)
 ENABLE_ADMIN_ENDPOINTS=false         # Set to true only for testing/development
@@ -385,13 +388,22 @@ Audio downloads are indexed (title, artist, album, duration, cover) so they can 
 GET    /library/tracks?limit=50&offset=0&q=daft   # list, newest first (limit 1-200)
 GET    /library/tracks/{id}/stream                 # inline audio, supports HTTP Range (seek)
 GET    /library/tracks/{id}/cover                  # embedded cover (JPEG), 404 if none
+GET    /library/duplicates                         # groups of tracks that look like the same song (read-only)
 PATCH  /library/tracks/{id}   {"kept": true}       # protect from / expose to cleanup
 DELETE /library/tracks/{id}                        # delete audio, sidecar and records (204)
 ```
 
-`GET /library/tracks` returns `{"tracks": [{"id", "title", "artist", "album", "duration_s", "format", "size_bytes", "has_cover", "kept"}], "total", "limit", "offset", "kept_bytes"}`. Ids are opaque (16 hex chars).
+`GET /library/tracks` returns `{"tracks": [{"id", "title", "artist", "album", "duration_s", "format", "size_bytes", "has_cover", "kept", "codec", "bitrate_kbps", "sample_rate", "quality_note", "replaygain_db"}], "total", "limit", "offset", "kept_bytes"}`. Ids are opaque (16 hex chars). The last five fields are `null` for tracks registered before they existed.
 
 Tracks flagged `kept` are skipped by the cleanup; new audio downloads are kept only if you enable `LIBRARY_AUTO_KEEP=true` (off by default; leave it off on a public demo). Tags come from the file, then from a `<file>.meta.json` sidecar, then from the file name. wav files carry no cover.
+
+#### Real quality, duplicates and clean tags
+
+- **Honest quality.** Everything downloaded here starts from a lossy stream (YouTube ~128 kbps; Spotify is resolved through it). The library stores the measured codec, bitrate and sample rate, and `quality_note` warns when a file is a lossless container or a high-bitrate re-encode of that lossy source (bigger, not better). Files that did not come from a download get no note.
+- **No duplicate downloads.** `youtu.be/<id>`, `watch?v=<id>&si=…`, `music.youtube.com/…`, shorts/embed and Spotify `intl-xx` links of the *same single track* resolve to one source id. A second request with the same quality and format reuses the existing file (`"Reusado desde dedup"`) or reports the job already in progress. URLs with `list=` are never deduplicated: yt-dlp would download the whole list. `GET /library/duplicates` also groups tracks with the same source, or the same artist and title and a duration within 2 s. It only reports: nothing is ever deleted for you.
+- **MusicBrainz tags (opt-in).** With `MUSICBRAINZ_ENABLED=true`, a new download is searched on MusicBrainz (max 1 request/second, retried on `503 busy`) and, only on a reliable match, gets clean title/artist, album, year, track number, MusicBrainz ids and the front cover from the Cover Art Archive. "Reliable" means: same title, search score ≥ 90, duration within 5 s when both are known, and an **official album, single or EP release with no secondary type** (live bootlegs, live albums and compilations are never used). The oldest edition wins, and the track number is the consensus of the editions. No match, no network or an error leaves the file exactly as downloaded. Queries contain only the song title, artist and duration.
+- **ReplayGain.** New downloads get a `REPLAYGAIN_TRACK_GAIN` tag (EBU R128 loudness against the -18 LUFS reference; Ogg Opus uses `R128_TRACK_GAIN`). Only the tag is written: the audio stream is untouched, so players that read ReplayGain play tracks at an even volume.
+- **Folders.** `LIBRARY_LAYOUT=artist-album` places new files in `Artist/Album/NN - Title.ext` (`Singles` when the album is unknown). Folder names are sanitized for Windows and never leave the download directory.
 
 ---
 
