@@ -186,6 +186,12 @@ class TrackEntry(BaseModel):
     kept: bool = False
     mtime: float = 0.0
     tags_source: Optional[str] = None
+    codec: Optional[str] = None
+    bitrate_kbps: Optional[int] = None
+    sample_rate: Optional[int] = None
+    quality_note: Optional[str] = None
+    source_id: Optional[str] = None
+    replaygain_db: Optional[float] = None
 
 
 class TrackResponse(BaseModel):
@@ -199,6 +205,11 @@ class TrackResponse(BaseModel):
     size_bytes: int = 0
     has_cover: bool = False
     kept: bool = False
+    codec: Optional[str] = None
+    bitrate_kbps: Optional[int] = None
+    sample_rate: Optional[int] = None
+    quality_note: Optional[str] = None
+    replaygain_db: Optional[float] = None
 
 
 class TrackListResponse(BaseModel):

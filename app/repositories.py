@@ -710,11 +710,22 @@ class TrackRepository(BaseRepository):
 
     _COLUMNS = (
         "id, job_id, path, title, artist, album, duration_s, format, "
-        "size_bytes, has_cover, kept, mtime, tags_source"
+        "size_bytes, has_cover, kept, mtime, tags_source, "
+        "codec, bitrate_kbps, sample_rate, quality_note, source_id, replaygain_db"
+    )
+
+    # Columnas añadidas después de la primera versión: se crean en bases antiguas (solo aditivo).
+    _ADDED_COLUMNS = (
+        ("codec", "TEXT"),
+        ("bitrate_kbps", "INTEGER"),
+        ("sample_rate", "INTEGER"),
+        ("quality_note", "TEXT"),
+        ("source_id", "TEXT"),
+        ("replaygain_db", "REAL"),
     )
 
     def ensure_schema(self) -> None:
-        """Crea la tabla tracks si no existe."""
+        """Crea la tabla tracks si no existe y añade las columnas nuevas a una base antigua."""
         con = self._connect()
         try:
             con.execute(
@@ -736,6 +747,10 @@ class TrackRepository(BaseRepository):
                 )
                 """
             )
+            existing = {r[1] for r in con.execute("PRAGMA table_info(tracks)")}
+            for name, sql_type in self._ADDED_COLUMNS:
+                if name not in existing:
+                    con.execute(f"ALTER TABLE tracks ADD COLUMN {name} {sql_type}")
             con.commit()
         finally:
             con.close()
@@ -756,6 +771,12 @@ class TrackRepository(BaseRepository):
             kept=bool(row[10]),
             mtime=row[11],
             tags_source=row[12],
+            codec=row[13],
+            bitrate_kbps=row[14],
+            sample_rate=row[15],
+            quality_note=row[16],
+            source_id=row[17],
+            replaygain_db=row[18],
         )
 
     def upsert(
@@ -772,6 +793,12 @@ class TrackRepository(BaseRepository):
         kept: Optional[bool] = None,
         mtime: Optional[float] = None,
         tags_source: Optional[str] = None,
+        codec: Optional[str] = None,
+        bitrate_kbps: Optional[int] = None,
+        sample_rate: Optional[int] = None,
+        quality_note: Optional[str] = None,
+        source_id: Optional[str] = None,
+        replaygain_db: Optional[float] = None,
     ) -> str:
         """
         Inserta o actualiza una pista por su id (derivado de la ruta).
@@ -780,6 +807,7 @@ class TrackRepository(BaseRepository):
             path: Ruta del archivo de audio
             kept: Marca kept; None conserva el valor existente (False en una pista nueva)
             mtime: Fecha de modificación; por defecto la del archivo (o 0 si no existe)
+            source_id, replaygain_db: None conserva el valor ya guardado (el cálculo es caro o externo)
 
         Returns:
             Id de la pista
@@ -793,7 +821,7 @@ class TrackRepository(BaseRepository):
         try:
             con.execute(
                 f"""INSERT INTO tracks({self._COLUMNS})
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(id) DO UPDATE SET
                       job_id=COALESCE(excluded.job_id, tracks.job_id),
                       path=excluded.path,
@@ -806,10 +834,17 @@ class TrackRepository(BaseRepository):
                       has_cover=excluded.has_cover,
                       kept=CASE WHEN ? IS NULL THEN tracks.kept ELSE excluded.kept END,
                       mtime=excluded.mtime,
-                      tags_source=excluded.tags_source""",
+                      tags_source=excluded.tags_source,
+                      codec=excluded.codec,
+                      bitrate_kbps=excluded.bitrate_kbps,
+                      sample_rate=excluded.sample_rate,
+                      quality_note=excluded.quality_note,
+                      source_id=COALESCE(excluded.source_id, tracks.source_id),
+                      replaygain_db=COALESCE(excluded.replaygain_db, tracks.replaygain_db)""",
                 (
                     track_id, job_id, str(path), title, artist, album, duration_s, fmt,
                     size_bytes, int(has_cover), int(bool(kept)), mtime, tags_source,
+                    codec, bitrate_kbps, sample_rate, quality_note, source_id, replaygain_db,
                     None if kept is None else int(kept),
                 ),
             )

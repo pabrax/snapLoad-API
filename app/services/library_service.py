@@ -7,7 +7,7 @@ from typing import Optional
 
 from ..core.config import settings
 from ..repositories import download_index_repo, track_id_for, track_repo
-from . import track_metadata
+from . import audio_quality, track_metadata
 
 BACKFILL_BATCH = 50
 
@@ -36,6 +36,9 @@ def register_track(
         kept = settings.LIBRARY_AUTO_KEEP
 
     tags = track_metadata.read_tags(audio_path)
+    quality = audio_quality.quality_from_probe(track_metadata.probe(audio_path))
+    # Origen con pérdida conocido: salió de una descarga (job) o tiene sidecar de yt-dlp/spotdl
+    lossy_origin = bool(job_id) or track_metadata.read_sidecar(audio_path) is not None
     return track_repo.upsert(
         path=audio_path,
         job_id=job_id,
@@ -48,6 +51,10 @@ def register_track(
         has_cover=tags.has_cover,
         kept=kept,
         tags_source=tags.source,
+        codec=quality.codec if quality else None,
+        bitrate_kbps=quality.bitrate_kbps if quality else None,
+        sample_rate=quality.sample_rate if quality else None,
+        quality_note=audio_quality.quality_note(quality, lossy_origin),
     )
 
 

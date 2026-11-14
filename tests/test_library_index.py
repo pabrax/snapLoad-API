@@ -136,6 +136,8 @@ def test_ready_audio_listed(client):
     assert body["tracks"][0] == {
         "id": track_id, "title": "Song", "artist": "Band", "album": "LP", "duration_s": 61.5,
         "format": "mp3", "size_bytes": 10, "has_cover": False, "kept": True,
+        "codec": None, "bitrate_kbps": None, "sample_rate": None, "quality_note": None,
+        "replaygain_db": None,
     }
 
 
