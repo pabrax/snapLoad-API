@@ -10,6 +10,7 @@ from typing import Optional, List, Dict, Any
 from abc import ABC, abstractmethod
 
 from .core.config import settings
+from .core.source_id import canonical_source_id
 from .schemas import DownloadIndexEntry, MediaInfo, TrackEntry
 
 
@@ -132,6 +133,53 @@ class DownloadIndexRepository(BaseRepository):
         finally:
             con.close()
     
+    def find_equivalent(
+        self,
+        url: str,
+        media_type: str,
+        quality: Optional[str] = None,
+        format_: Optional[str] = None,
+    ) -> Optional[DownloadIndexEntry]:
+        """
+        Busca otra URL de la MISMA pista (mismo id canónico) con igual tipo, calidad y formato.
+
+        Prefiere una descarga lista cuyos archivos siguen en disco; si no hay, una en curso.
+        No modifica el índice. Devuelve None si la URL no es de una sola pista o no hay equivalente.
+        """
+        source_id = canonical_source_id(url)
+        if not source_id:
+            return None
+        needle = source_id.split(":", 1)[1].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+        con = self._connect()
+        try:
+            rows = con.execute(
+                """SELECT url, type, quality, format, files_json, status, job_id,
+                          created_at, last_access, error
+                   FROM downloads
+                   WHERE type=? AND IFNULL(quality,'')=IFNULL(?, '') AND IFNULL(format,'')=IFNULL(?, '')
+                     AND status IN ('ready','pending') AND url != ? AND url LIKE ? ESCAPE '\\'
+                   ORDER BY created_at DESC""",
+                (media_type, quality, format_, url, f"%{needle}%"),
+            ).fetchall()
+        finally:
+            con.close()
+
+        pending = None
+        for row in rows:
+            if canonical_source_id(row[0]) != source_id:
+                continue
+            files = json.loads(row[4]) if row[4] else []
+            entry = DownloadIndexEntry(
+                url=row[0], type=row[1], quality=row[2], format=row[3], files=files,
+                status=row[5], job_id=row[6], created_at=row[7], last_access=row[8], error=row[9],
+            )
+            if entry.status == "ready" and files and all(Path(p).exists() for p in files):
+                return entry
+            if entry.status == "pending" and entry.job_id and pending is None:
+                pending = entry
+        return pending
+
     def find_by_job_id(self, job_id: str) -> Optional[DownloadIndexEntry]:
         """
         Busca una descarga por job_id.
@@ -896,6 +944,15 @@ class TrackRepository(BaseRepository):
                 [*params, limit, offset],
             ).fetchall()
             return [self._entry(r) for r in rows], total
+        finally:
+            con.close()
+
+    def all_entries(self) -> List[TrackEntry]:
+        """Todas las pistas (para análisis de la biblioteca completa, p. ej. duplicados)."""
+        con = self._connect()
+        try:
+            rows = con.execute(f"SELECT {self._COLUMNS} FROM tracks ORDER BY mtime DESC, rowid DESC").fetchall()
+            return [self._entry(r) for r in rows]
         finally:
             con.close()
 

@@ -212,6 +212,11 @@ class TrackResponse(BaseModel):
     replaygain_db: Optional[float] = None
 
 
+class DuplicateGroupsResponse(BaseModel):
+    """Grupos de pistas que parecen la misma canción (informativo; nada se borra)."""
+    groups: List[List[TrackResponse]]
+
+
 class TrackListResponse(BaseModel):
     """Página de la biblioteca."""
     tracks: List[TrackResponse]

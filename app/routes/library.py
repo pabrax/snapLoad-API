@@ -15,7 +15,7 @@ from ..core.config import settings
 from ..core.http_range import UNSATISFIABLE, parse_range
 from ..helpers import FileNameHelper
 from ..repositories import track_repo
-from ..schemas import TrackEntry, TrackListResponse, TrackResponse
+from ..schemas import DuplicateGroupsResponse, TrackEntry, TrackListResponse, TrackResponse
 from ..services import library_service, track_metadata
 
 router = APIRouter(prefix="/library", tags=["library"])
@@ -149,6 +149,19 @@ def list_tracks(
         offset=offset,
         kept_bytes=track_repo.kept_bytes(),
     )
+
+
+@router.get("/duplicates", response_model=DuplicateGroupsResponse)
+def list_duplicates():
+    """
+    Grupos de pistas que parecen la misma canción (misma fuente, o mismo artista y título con duración
+    casi igual). Solo informa: no borra nada; el usuario decide qué copia conservar.
+    """
+    library_service.backfill()
+    library_service.prune_missing()
+    by_id = {t.id: t for t in track_repo.all_entries()}
+    groups = [[_to_response(by_id[i]) for i in ids if i in by_id] for ids in library_service.find_duplicates()]
+    return DuplicateGroupsResponse(groups=groups)
 
 
 @router.get("/tracks/{track_id}/cover")

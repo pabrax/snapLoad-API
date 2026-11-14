@@ -87,6 +87,22 @@ class DownloadOrchestrator:
                 source="cache"
             )
         
+        # 1b. Otra URL de la misma pista (youtu.be vs watch?v=, parámetros de seguimiento...)
+        twin = self.download_index.find_equivalent(url, media_type, quality, format_)
+        if twin and twin.status == "ready":
+            return AvailabilityResult(
+                status="ready",
+                job_id=twin.job_id,
+                files=twin.files,
+                source="dedup"
+            )
+        if twin and twin.status == "pending":
+            return AvailabilityResult(
+                status="pending",
+                job_id=twin.job_id,
+                source="dedup"
+            )
+
         # 2. Buscar en catálogo de media
         media = self.media_catalog.get_by_url(url)
         
