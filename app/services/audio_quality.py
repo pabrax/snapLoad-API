@@ -74,3 +74,44 @@ def quality_note(quality: Optional[QualityInfo], lossy_origin: bool) -> Optional
             "larger file, no real quality gain."
         )
     return None
+
+
+# --- sonoridad y ReplayGain ------------------------------------------------------------------------
+
+import re  # noqa: E402
+import subprocess  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from ..core.process import resolve_binary  # noqa: E402
+
+REPLAYGAIN_REFERENCE_LUFS = -18.0   # ReplayGain 2.0
+R128_REFERENCE_LUFS = -23.0         # Ogg Opus (RFC 7845 / EBU R128)
+LOUDNESS_TIMEOUT_S = 180
+_INTEGRATED = re.compile(r"\bI:\s+(-?\d+(?:\.\d+)?)\s+LUFS")
+
+
+def measure_loudness(path: Path) -> Optional[float]:
+    """
+    Sonoridad integrada (LUFS, EBU R128) con ffmpeg `ebur128`, sin modificar el archivo.
+
+    Returns:
+        LUFS, o None si ffmpeg falta, el archivo es ilegible o es silencio (-inf)
+    """
+    path = Path(path)
+    if not path.is_file():
+        return None
+    try:
+        res = subprocess.run(
+            [resolve_binary("ffmpeg"), "-hide_banner", "-nostats", "-i", str(path),
+             "-filter_complex", "ebur128", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=LOUDNESS_TIMEOUT_S,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    matches = _INTEGRATED.findall(res.stderr or "")
+    return float(matches[-1]) if res.returncode == 0 and matches else None
+
+
+def replaygain_db(loudness_lufs: float) -> float:
+    """Ganancia ReplayGain 2.0 (dB) para llevar la pista a -18 LUFS."""
+    return round(REPLAYGAIN_REFERENCE_LUFS - loudness_lufs, 2)

@@ -135,3 +135,110 @@ def test_register_track_without_origin_has_no_note(sandbox):
 
     t = track_repo.get(track_id)
     assert t.codec == "flac" and t.quality_note is None
+
+
+# --- T6: ReplayGain (tag only, audio untouched) -------------------------------------------------------
+
+import hashlib  # noqa: E402
+
+from app.services import audio_quality  # noqa: E402
+from app.services.tagger import write_replaygain  # noqa: E402
+
+
+def _audio_md5(path):
+    return subprocess.run(
+        [resolve_binary("ffmpeg"), "-v", "error", "-i", str(path), "-map", "0:a", "-c", "copy", "-f", "md5", "-"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+
+def _tone(path, volume_db, *codec):
+    subprocess.run(
+        [resolve_binary("ffmpeg"), "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=4",
+         "-af", f"volume={volume_db}dB", *codec, str(path)],
+        check=True,
+    )
+    return path
+
+
+@needs_ffmpeg
+def test_loudness_and_gain_follow_the_replaygain_reference(tmp_path):
+    quiet = audio_quality.measure_loudness(_tone(tmp_path / "q.flac", -30, "-c:a", "flac"))
+    # ffmpeg's sine is generated at -18 dBFS, so +14 dB lands above the -18 LUFS reference
+    loud = audio_quality.measure_loudness(_tone(tmp_path / "l.flac", 14, "-c:a", "flac"))
+
+    assert quiet is not None and loud is not None and quiet < loud
+    assert round(loud - quiet) == 44                       # 44 dB apart, as generated
+    # RG2 reference is -18 LUFS: a quiet track gets a positive gain, a loud one a negative gain
+    assert audio_quality.replaygain_db(quiet) > 0 > audio_quality.replaygain_db(loud)
+    assert audio_quality.replaygain_db(-18.0) == 0.0
+
+
+def test_measure_loudness_never_raises(tmp_path):
+    junk = tmp_path / "junk.mp3"
+    junk.write_bytes(b"not audio")
+    assert audio_quality.measure_loudness(junk) is None
+    assert audio_quality.measure_loudness(tmp_path / "missing.mp3") is None
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("ext,codec", [
+    ("mp3", ["-c:a", "libmp3lame", "-b:a", "128k"]),
+    ("m4a", ["-c:a", "aac", "-b:a", "128k"]),
+    ("flac", ["-c:a", "flac"]),
+    ("ogg", ["-c:a", "libvorbis", "-q:a", "3"]),
+    ("opus", ["-c:a", "libopus", "-b:a", "96k"]),
+])
+def test_replaygain_tag_written_and_audio_untouched(tmp_path, ext, codec):
+    audio = _tone(tmp_path / f"a.{ext}", -20, *codec)
+    before = _audio_md5(audio)
+
+    assert write_replaygain(audio, loudness_lufs=-26.0) is True
+
+    from mutagen import File
+    tags = File(str(audio), easy=False).tags
+    flat = {str(k).lower(): str(v) for k, v in tags.items()}
+    if ext == "opus":
+        # Ogg Opus uses R128_TRACK_GAIN in Q7.8 dB relative to -23 LUFS: -23 - (-26) = +3 dB = 768
+        assert any(k == "r128_track_gain" and "768" in v for k, v in flat.items())
+    else:
+        # RG2 reference -18 LUFS: -18 - (-26) = +8.00 dB
+        assert any("replaygain_track_gain" in k and "+8.00 dB" in v for k, v in flat.items()), flat
+    assert _audio_md5(audio) == before
+
+
+def test_replaygain_unsupported_or_missing_returns_false(tmp_path):
+    wav = tmp_path / "a.wav"
+    wav.write_bytes(b"RIFF....WAVE")
+    assert write_replaygain(wav, -20.0) is False
+    assert write_replaygain(tmp_path / "nope.mp3", -20.0) is False
+
+
+@needs_ffmpeg
+def test_register_track_for_a_download_stores_replaygain(sandbox):
+    from app.core.config import settings
+    folder = settings.DOWNLOAD_DIR / "audio"
+    folder.mkdir(parents=True)
+    audio = _tone(folder / "Tone.mp3", -26, "-c:a", "libmp3lame", "-b:a", "128k")
+
+    track_id = library_service.register_track(audio, job_id="job1", fmt="mp3", analyze=True)
+
+    gain = track_repo.get(track_id).replaygain_db
+    assert gain is not None and gain > 0                   # quiet tone => positive gain
+    from mutagen.id3 import ID3
+    assert any("replaygain_track_gain" in str(k).lower() for k in ID3(str(audio)).keys())
+
+
+@needs_ffmpeg
+def test_library_files_without_a_job_are_not_modified(sandbox):
+    """Only fresh downloads get tags written; a user's own file is only read."""
+    from app.core.config import settings
+    folder = settings.DOWNLOAD_DIR / "audio"
+    folder.mkdir(parents=True)
+    audio = _tone(folder / "Mine.mp3", -26, "-c:a", "libmp3lame", "-b:a", "128k")
+    before = hashlib.sha256(audio.read_bytes()).hexdigest()
+
+    library_service.register_track(audio)
+    library_service.register_track(audio, job_id="oldjob")   # backfill path: job known, but no analysis
+
+    assert hashlib.sha256(audio.read_bytes()).hexdigest() == before

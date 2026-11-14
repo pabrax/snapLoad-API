@@ -176,3 +176,52 @@ def write_tags(path: Path, data: TagData, cover: Optional[bytes] = None) -> bool
         return True
     except Exception:
         return False
+
+
+def write_replaygain(path: Path, loudness_lufs: float) -> bool:
+    """
+    Escribe la ganancia de pista como tag (sin recodificar ni tocar el audio): `REPLAYGAIN_TRACK_GAIN`
+    (referencia -18 LUFS) o, en Ogg Opus, `R128_TRACK_GAIN` en Q7.8 dB respecto a -23 LUFS.
+
+    Returns:
+        True si se escribió; False si el formato no admite tags, falta el archivo o es ilegible
+    """
+    from .audio_quality import R128_REFERENCE_LUFS, replaygain_db
+
+    path = Path(path)
+    ext = path.suffix.lower()
+    if ext not in _WRITERS or not path.is_file():
+        return False
+    gain_text = f"{replaygain_db(loudness_lufs):+.2f} dB"
+    try:
+        if ext == ".mp3":
+            from mutagen.id3 import ID3, TXXX, ID3NoHeaderError
+            try:
+                tags = ID3(str(path))
+            except ID3NoHeaderError:
+                tags = ID3()
+            tags.setall("TXXX:REPLAYGAIN_TRACK_GAIN",
+                        [TXXX(encoding=3, desc="REPLAYGAIN_TRACK_GAIN", text=gain_text)])
+            tags.save(str(path), v2_version=3)
+        elif ext == ".m4a":
+            from mutagen.mp4 import MP4, MP4FreeForm
+            audio = MP4(str(path))
+            if audio.tags is None:
+                audio.add_tags()
+            audio.tags["----:com.apple.iTunes:REPLAYGAIN_TRACK_GAIN"] = [MP4FreeForm(gain_text.encode("ascii"))]
+            audio.save()
+        else:
+            from mutagen.flac import FLAC
+            from mutagen.oggopus import OggOpus
+            from mutagen.oggvorbis import OggVorbis
+            audio = {".flac": FLAC, ".ogg": OggVorbis, ".opus": OggOpus}[ext](str(path))
+            if audio.tags is None:
+                audio.add_tags()
+            if ext == ".opus":
+                audio["R128_TRACK_GAIN"] = [str(round((R128_REFERENCE_LUFS - loudness_lufs) * 256))]
+            else:
+                audio["REPLAYGAIN_TRACK_GAIN"] = [gain_text]
+            audio.save()
+        return True
+    except Exception:
+        return False

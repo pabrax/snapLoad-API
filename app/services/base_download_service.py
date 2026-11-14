@@ -420,7 +420,9 @@ class BaseDownloadService(ABC):
         if self.get_media_type() == MediaType.AUDIO:
             try:
                 for file_info in moved_files:
-                    library_service.register_track(Path(file_info.path), job_id=job_id, fmt=format_)
+                    library_service.register_track(
+                        Path(file_info.path), job_id=job_id, fmt=format_, analyze=True
+                    )
             except Exception:
                 # La biblioteca se puede reconstruir (backfill): no fallar la descarga por ella
                 pass
