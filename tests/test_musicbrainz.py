@@ -49,6 +49,80 @@ def test_lookup_picks_the_official_album_release():
                             track_no=6, recording_id="rec-1", release_id="rel-ok")
 
 
+def rel(rid, title, status="Official", primary="Album", secondary=None, date="1997-05-21", number="6"):
+    return {"id": rid, "title": title, "status": status, "date": date,
+            "release-group": {"primary-type": primary, "secondary-types": secondary or []},
+            "media": [{"track": [{"number": number}]}]}
+
+
+def rec(rid, releases, length=264000, score=100, title="Karma Police"):
+    return {"id": rid, "score": score, "title": title, "length": length,
+            "artist-credit": [{"name": "Radiohead", "joinphrase": ""}], "releases": releases}
+
+
+LIVE = rel("rel-live", "2012-03-13: 1st Bank Center", status="Bootleg", secondary=["Live"], date="2012")
+OFFICIAL_LIVE = rel("rel-ol", "Live at Roundhouse", secondary=["Live"], date="2016")
+COMP = rel("rel-comp", "The Best Of", secondary=["Compilation"], date="2008")
+STUDIO = rel("rel-ok", "OK Computer")
+
+
+def test_never_tags_with_live_bootleg_or_compilation_releases():
+    """Real MusicBrainz returns many score-100 live bootlegs; tagging with their album would be wrong."""
+    recordings = [rec("r1", [LIVE]), rec("r2", [OFFICIAL_LIVE]), rec("r3", [COMP])]
+    assert client_with(ok(recordings)).lookup("Karma Police", "Radiohead", 264.0) is None
+
+
+def test_studio_album_wins_among_many_candidates():
+    recordings = [rec("r1", [LIVE]), rec("r2", [COMP]), rec("r3", [COMP, STUDIO]), rec("r4", [OFFICIAL_LIVE])]
+    match = client_with(ok(recordings)).lookup("Karma Police", "Radiohead", 264.0)
+    assert (match.recording_id, match.album, match.release_id) == ("r3", "OK Computer", "rel-ok")
+
+
+def test_oldest_release_wins_then_closest_duration():
+    """The original edition beats a reissue even when the reissue is a few ms closer in length."""
+    reissue = rec("reissue", [rel("rel-new", "Reissue", date="2009")], length=264000)
+    original = rec("original", [rel("rel-old", "Original", date="1997")], length=262500)
+    assert client_with(ok([reissue, original])).lookup("Karma Police", "Radiohead", 264.0).album == "Original"
+    same_track_far = rec("far", [rel("rel-a", "A", date="1997", number="6")], length=268000)
+    same_track_near = rec("near", [rel("rel-b", "B", date="1997", number="6")], length=264200)
+    assert client_with(ok([same_track_far, same_track_near])).lookup("Karma Police", "Radiohead", 264.0).recording_id == "near"
+
+
+def test_track_number_is_the_consensus_of_the_editions_of_the_same_album():
+    """One odd edition (bonus tracks, different numbering) must not decide the track number."""
+    odd = rec("odd", [rel("r1", "OK Computer", date="1997-05-21", number="1")])
+    a = rec("a", [rel("r2", "OK Computer", date="1997-06-01", number="6")])
+    b = rec("b", [rel("r3", "OK Computer", date="1998-01-01", number="6")])
+    match = client_with(ok([odd, a, b])).lookup("Karma Police", "Radiohead", 264.0)
+    assert (match.album, match.track_no) == ("OK Computer", 6)
+    assert match.release_id == "r1"          # the original (oldest) edition still supplies year and cover
+
+
+def test_album_is_preferred_over_single_and_single_is_accepted_alone():
+    single = rec("s", [rel("rel-s", "Karma Police", primary="Single", date="1997")])
+    album = rec("a", [rel("rel-al", "OK Computer", date="1997")])
+    assert client_with(ok([single, album])).lookup("Karma Police", "Radiohead", 264.0).album == "OK Computer"
+    assert client_with(ok([single])).lookup("Karma Police", "Radiohead", 264.0).album == "Karma Police"
+
+
+def test_title_must_match_the_requested_one():
+    other = rec("x", [STUDIO], title="Karma Police (Live)")
+    assert client_with(ok([other])).lookup("Karma Police", "Radiohead", 264.0) is None
+    punct = rec("y", [STUDIO], title="Karma  Police!")
+    assert client_with(ok([punct])).lookup("karma police", "Radiohead", 264.0) is not None
+
+
+def test_query_asks_for_official_releases_and_a_wide_page():
+    seen = {}
+
+    def handler(request):
+        seen["q"], seen["limit"] = request.url.params["query"], request.url.params["limit"]
+        return httpx.Response(200, json={"recordings": []})
+
+    client_with(handler).lookup("Karma Police", "Radiohead", None)
+    assert "status:official" in seen["q"] and int(seen["limit"]) == 100
+
+
 def test_lookup_rejects_low_score_and_duration_mismatch():
     low = dict(RECORDING, score=60)
     assert client_with(ok([low])).lookup("Karma Police", "Radiohead", 264.0) is None
@@ -69,6 +143,56 @@ def test_lookup_without_known_duration_still_matches_on_score():
 ])
 def test_lookup_never_raises(handler):
     assert client_with(handler).lookup("Karma Police", "Radiohead", 264.0) is None
+
+
+def test_busy_server_is_retried_and_then_succeeds():
+    """MusicBrainz answers 503 "busy" often; one transient error must not lose the match."""
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        if len(calls) < 3:
+            return httpx.Response(503, json={"error": "busy"})
+        return httpx.Response(200, json={"recordings": [RECORDING]})
+
+    assert client_with(handler).lookup("Karma Police", "Radiohead", 264.0) is not None
+    assert len(calls) == 3
+
+
+def test_persistent_503_gives_up_after_three_attempts():
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(503)
+
+    assert client_with(handler).lookup("Karma Police", "Radiohead", 264.0) is None
+    assert len(calls) == 3
+
+
+def test_client_errors_are_not_retried():
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(400)
+
+    assert client_with(handler).lookup("Karma Police", "Radiohead", 264.0) is None
+    assert len(calls) == 1
+
+
+def test_retries_still_respect_the_one_second_spacing():
+    now, gaps = [100.0], []
+
+    def sleep(s):
+        gaps.append(s)
+        now[0] += s
+
+    statuses = iter([503, 503, 200])
+    client = client_with(lambda r: httpx.Response(next(statuses), json={"recordings": []}),
+                         clock=lambda: now[0], sleep=sleep)
+    client.lookup("a", "b", None)
+    assert gaps and all(g >= 1.0 - 1e-6 for g in gaps)
 
 
 def test_lookup_requires_a_title():
