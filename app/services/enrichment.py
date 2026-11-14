@@ -18,7 +18,8 @@ from .tagger import TagData, clean_artist, clean_title, write_replaygain, write_
 
 _WINDOWS_RESERVED = {
     "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
-    *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10)),
+    *(f"COM{i}" for i in (*range(0, 10), "¹", "²", "³")),
+    *(f"LPT{i}" for i in (*range(0, 10), "¹", "²", "³")),
 }
 _client: Optional[MusicBrainzClient] = None
 

@@ -33,6 +33,7 @@ def _claim_path(path: Path) -> Path:
 
 def _prune_empty(folder: Path, stop: Path) -> None:
     """Borra `folder` y sus padres hasta `stop` (sin incluirlo) mientras estén vacíos; nunca toca contenido."""
+    folder, stop = folder.resolve(), stop.resolve()     # comparar rutas reales, no texto ("a/../b")
     while folder != stop and stop in folder.parents:
         try:
             folder.rmdir()

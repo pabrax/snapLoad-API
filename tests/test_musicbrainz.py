@@ -671,3 +671,19 @@ def test_reserved_device_names_are_not_reserved_after_sanitizing(raw):
     reserved = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
     safe = enrichment.safe_component(raw)
     assert safe.split(".")[0].strip().upper() not in reserved, safe
+
+
+@pytest.mark.parametrize("raw", ["COM0", "LPT0", "COM¹", "LPT².txt", "COM³"])
+def test_remaining_documented_device_names_are_neutralised(raw):
+    safe = enrichment.safe_component(raw)
+    assert safe.split(".")[0].strip() != raw.split(".")[0].strip() and "_" in safe
+
+
+def test_prune_never_climbs_out_of_or_removes_the_destination(tmp_path):
+    import importlib
+    fm = importlib.import_module("app.managers.file_manager")
+    dest = tmp_path / "dest"
+    (dest / "a").mkdir(parents=True)
+    fm._prune_empty(dest / "a" / ".." / "b", dest)           # textual path that resolves to dest/b
+    fm._prune_empty(dest / "a" / "..", dest)                 # resolves to dest itself
+    assert dest.exists() and (dest / "a").exists()
