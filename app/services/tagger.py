@@ -103,6 +103,7 @@ def _write_mp3(path: Path, data: TagData, cover: Optional[bytes]) -> None:
     if cover:
         tags.delall("APIC")
         tags.add(APIC(encoding=3, mime=_image_mime(cover), type=3, desc="Cover", data=cover))
+    tags.update_to_v23()
     tags.save(str(path), v2_version=3)
 
 
@@ -202,6 +203,7 @@ def write_replaygain(path: Path, loudness_lufs: float) -> bool:
                 tags = ID3()
             tags.setall("TXXX:REPLAYGAIN_TRACK_GAIN",
                         [TXXX(encoding=3, desc="REPLAYGAIN_TRACK_GAIN", text=gain_text)])
+            tags.update_to_v23()
             tags.save(str(path), v2_version=3)
         elif ext == ".m4a":
             from mutagen.mp4 import MP4, MP4FreeForm

@@ -145,3 +145,20 @@ def test_clean_artist(raw, expected):
 ])
 def test_clean_title(raw, artist, expected):
     assert clean_title(raw, artist) == expected
+
+
+@needs_ffmpeg
+def test_mp3_with_id3v24_tags_is_saved_as_a_consistent_id3v23(tmp_path):
+    """yt-dlp writes ID3v2.4 (TDRC...); saving as v2.3 without converting would leave unreadable frames."""
+    from mutagen.id3 import ID3
+    audio = tmp_path / "a.mp3"
+    subprocess.run([resolve_binary("ffmpeg"), "-v", "error", "-y", "-f", "lavfi", "-i", "sine=duration=1",
+                    "-c:a", "libmp3lame", "-id3v2_version", "4", "-metadata", "date=2001",
+                    "-metadata", "title=Old", str(audio)], check=True)
+    assert ID3(str(audio)).version == (2, 4, 0)
+
+    write_tags(audio, TagData(title="New", artist="A"))
+
+    tags = ID3(str(audio), translate=False)      # the frames really stored on disk, not mutagen's v2.4 view
+    assert tags.version == (2, 3, 0)
+    assert "TDRC" not in tags and "TYER" in tags and str(tags["TYER"]) == "2001"

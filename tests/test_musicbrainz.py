@@ -241,11 +241,11 @@ def test_requests_are_spaced_at_least_one_second():
 def test_fetch_cover():
     jpg = b"\xff\xd8\xff\xe0" + b"x" * 100
     assert client_with(lambda r: httpx.Response(200, content=jpg, headers={"content-type": "image/jpeg"})
-                       ).fetch_cover("rel-ok") == jpg
-    assert client_with(lambda r: httpx.Response(404)).fetch_cover("rel-ok") is None
+                       ).fetch_cover(UUID) == jpg
+    assert client_with(lambda r: httpx.Response(404)).fetch_cover(UUID) is None
     assert client_with(lambda r: httpx.Response(200, content=b"<html>", headers={"content-type": "text/html"})
-                       ).fetch_cover("rel-ok") is None
-    assert client_with(lambda r: (_ for _ in ()).throw(httpx.ConnectError("x"))).fetch_cover("r") is None
+                       ).fetch_cover(UUID) is None
+    assert client_with(lambda r: (_ for _ in ()).throw(httpx.ConnectError("x"))).fetch_cover(UUID) is None
     assert client_with(ok([])).fetch_cover(None) is None
 
 
@@ -482,3 +482,146 @@ def test_job_with_features_off_behaves_as_before(sandbox, monkeypatch):
 
     assert entry.status == "ready" and Path(entry.files[0]).name == "Karma Police.mp3"
     assert track_repo.list()[0][0].artist == "RadioheadVEVO"
+
+
+# --- review fixes: lengths, fallbacks, collisions, artist-less lookups, bounded HTTP ---------------------
+
+from app.helpers import FileNameHelper  # noqa: E402
+from app.managers.file_manager import FileManager  # noqa: E402
+
+UUID = "9eff0482-170f-3e93-8c65-73ce18e10ee7"
+
+
+def test_long_titles_keep_their_extension_and_stay_within_the_limit():
+    placement = enrichment.build_placement("A" * 300, "B" * 300, "T" * 400, 7, ".flac")
+    assert placement.name.endswith(".flac") and placement.name.startswith("07 - ")
+    assert len(placement.name) <= settings.MAX_FILENAME_LENGTH
+    assert all(len(part) <= settings.MAX_FILENAME_LENGTH for part in placement.subdir.parts)
+    assert FileNameHelper.sanitize_filename(placement.name).endswith(".flac")
+
+
+def _tmp_audio(folder, name="a.mp3", data=b"x"):
+    folder.mkdir(parents=True, exist_ok=True)
+    f = folder / name
+    f.write_bytes(data)
+    return f
+
+
+def test_failed_layout_folder_falls_back_to_the_flat_destination(tmp_path, monkeypatch):
+    src, dest = tmp_path / "tmp", tmp_path / "dest"
+    _tmp_audio(src)
+    real_mkdir = Path.mkdir
+
+    def picky_mkdir(self, *a, **kw):
+        if "Artist" in self.parts:
+            raise OSError("path too long")
+        return real_mkdir(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "mkdir", picky_mkdir)
+    moved = FileManager.move_files_to_destination(
+        src, dest, {".mp3"}, prepare=lambda f: enrichment.Placement(Path("Artist") / "Album", "01 - a.mp3"))
+
+    assert len(moved) == 1 and Path(moved[0].path).parent == dest and Path(moved[0].path).exists()
+
+
+def test_same_placement_twice_never_overwrites(tmp_path):
+    dest = tmp_path / "dest"
+
+    def prepare(f):
+        return enrichment.Placement(Path("Artist") / "Album", "01 - Song.mp3")
+
+    FileManager.move_files_to_destination(_tmp_audio(tmp_path / "t1", data=b"first").parent, dest, {".mp3"}, prepare=prepare)
+    FileManager.move_files_to_destination(_tmp_audio(tmp_path / "t2", data=b"second").parent, dest, {".mp3"}, prepare=prepare)
+    contents = sorted(p.read_bytes() for p in (dest / "Artist" / "Album").iterdir())
+    assert contents == [b"first", b"second"]
+
+
+def test_a_lost_race_on_the_chosen_name_does_not_overwrite(tmp_path, monkeypatch):
+    """unique_path said 'free' but another job took it meanwhile: the claim must be exclusive."""
+    dest = tmp_path / "dest"
+    taken = _tmp_audio(dest, "a.mp3", b"other job")
+    monkeypatch.setattr(FileNameHelper, "unique_path", staticmethod(lambda p: p))   # stale answer
+    FileManager.move_files_to_destination(_tmp_audio(tmp_path / "tmp", data=b"mine").parent, dest, {".mp3"})
+    assert taken.read_bytes() == b"other job"
+    assert sorted(p.read_bytes() for p in dest.iterdir()) == [b"mine", b"other job"]
+
+
+@needs_ffmpeg
+def test_no_artist_means_no_musicbrainz_lookup(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "MUSICBRAINZ_ENABLED", True)
+    monkeypatch.setattr(settings, "LIBRARY_LAYOUT", "flat")
+    audio = make_mp3(tmp_path / "Home.mp3", title="Home", artist="")
+    fake = FakeClient(MATCH)
+    monkeypatch.setattr(enrichment, "get_client", lambda: fake)
+    assert enrichment.prepare_audio(audio) is None
+    assert fake.queries == [], "a title-only search would tag a stranger's artist, album and cover"
+
+
+@pytest.mark.parametrize("raw", ["CONIN$", "conout$", "CON .txt", "con.", "NUL .x", "LPT1"])
+def test_more_windows_reserved_names_are_neutralised(raw):
+    safe = enrichment.safe_component(raw)
+    assert safe.endswith("_") or safe.split(".")[0].strip().upper() not in {"CON", "CONIN$", "CONOUT$", "NUL", "LPT1"}
+    assert safe != raw
+
+
+def test_release_id_must_be_a_uuid():
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200)
+
+    client = client_with(handler)
+    assert client.fetch_cover("../../etc/passwd") is None and client.fetch_cover("x?y=1") is None
+    assert calls == []
+
+
+def test_cover_redirect_to_another_host_is_refused():
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        if request.url.host == "coverartarchive.org":
+            return httpx.Response(307, headers={"location": "http://169.254.169.254/latest/meta-data"})
+        return httpx.Response(200, content=b"secret", headers={"content-type": "image/jpeg"})
+
+    assert client_with(handler).fetch_cover(UUID) is None
+    assert all("169.254" not in u for u in seen)
+
+
+def test_cover_redirect_to_archive_org_is_followed():
+    jpg = b"\xff\xd8\xff" + b"x" * 50
+
+    def handler(request):
+        if request.url.host == "coverartarchive.org":
+            return httpx.Response(307, headers={"location": "https://archive.org/download/x/y.jpg"})
+        if request.url.host == "archive.org":
+            return httpx.Response(302, headers={"location": "https://dn1.ca.archive.org/0/items/x/y.jpg"})
+        return httpx.Response(200, content=jpg, headers={"content-type": "image/jpeg"})
+
+    assert client_with(handler).fetch_cover(UUID) == jpg
+
+
+def test_oversized_bodies_are_rejected():
+    big = b"\xff\xd8\xff" + b"x" * 6_000_000
+    assert client_with(lambda r: httpx.Response(200, content=big, headers={"content-type": "image/jpeg"})
+                       ).fetch_cover(UUID) is None
+    huge_json = b'{"recordings": [' + b'{"id": "x"},' * 600_000 + b'{}]}'
+    assert client_with(lambda r: httpx.Response(200, content=huge_json, headers={"content-type": "application/json"})
+                       ).lookup("Karma Police", "Radiohead", None) is None
+
+
+def test_contact_cannot_inject_headers(monkeypatch):
+    monkeypatch.setattr(settings, "MUSICBRAINZ_CONTACT", "me@example.org\r\nX-Evil: 1")
+    ua = MusicBrainzClient._user_agent()
+    assert "\r" not in ua and "\n" not in ua and ua.startswith("SnapLoad/")
+
+
+@needs_ffmpeg
+def test_job_tags_replaygain_before_publishing(sandbox, monkeypatch):
+    monkeypatch.setattr(settings, "MUSICBRAINZ_ENABLED", False)
+    monkeypatch.setattr(settings, "LIBRARY_LAYOUT", "flat")
+    entry = run_job("jobRG")
+    tags = track_metadata._embedded(track_metadata.probe(Path(entry.files[0])))
+    assert "replaygain_track_gain" in tags
+    assert track_repo.list()[0][0].replaygain_db is not None

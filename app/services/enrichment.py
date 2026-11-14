@@ -12,11 +12,14 @@ from typing import Optional
 
 from ..core.config import settings
 from ..helpers import FileNameHelper
-from . import track_metadata
+from . import audio_quality, track_metadata
 from .musicbrainz import MBMatch, MusicBrainzClient
-from .tagger import TagData, clean_artist, clean_title, write_tags
+from .tagger import TagData, clean_artist, clean_title, write_replaygain, write_tags
 
-_WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+_WINDOWS_RESERVED = {
+    "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+    *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10)),
+}
 _client: Optional[MusicBrainzClient] = None
 
 
@@ -41,7 +44,7 @@ def safe_component(text: Optional[str]) -> str:
     name = re.sub(r'[<>:"|?*]+', "_", name).rstrip(" .")
     if not name:
         return "_"
-    return f"{name}_" if name.split(".")[0].upper() in _WINDOWS_RESERVED else name
+    return f"{name}_" if name.split(".")[0].strip().upper() in _WINDOWS_RESERVED else name
 
 
 def build_placement(
@@ -50,8 +53,11 @@ def build_placement(
     """Placement `Artista/Álbum/NN - Título.ext`, o None si faltan artista o título."""
     if not (artist and artist.strip() and title and title.strip()):
         return None
-    stem = safe_component(title)
-    name = f"{track_no:02d} - {stem}{ext}" if track_no else f"{stem}{ext}"
+    prefix = f"{track_no:02d} - " if track_no else ""
+    # El recorte va sobre el título, no sobre el nombre final: así nunca se pierde la extensión
+    room = max(settings.MAX_FILENAME_LENGTH - len(prefix) - len(ext), 1)
+    stem = safe_component(title)[:room].rstrip(" .") or "_"
+    name = f"{prefix}{stem}{ext}"
     return Placement(Path(safe_component(artist)) / safe_component(album or "Singles"), name)
 
 
@@ -73,7 +79,8 @@ def _prepare(source: Path) -> Optional[Placement]:
     title = clean_title(tags.title, artist)
 
     match = None
-    if settings.MUSICBRAINZ_ENABLED:
+    # Sin artista no se busca: un título suelto ("Home", "Intro") etiquetaría con datos de un desconocido
+    if settings.MUSICBRAINZ_ENABLED and artist:
         try:
             match = get_client().lookup(title, artist, tags.duration_s)
         except Exception:
@@ -96,5 +103,20 @@ def prepare_audio(source: Path) -> Optional[Placement]:
         return None
     try:
         return _prepare(Path(source))
+    except Exception:
+        return None
+
+
+def tag_loudness(source: Path) -> Optional[float]:
+    """
+    Mide la sonoridad del archivo y escribe el tag ReplayGain (solo el tag; el audio no se toca).
+    Se llama sobre el archivo temporal, antes de publicarlo. Devuelve la ganancia en dB, o None.
+    """
+    try:
+        loudness = audio_quality.measure_loudness(source)
+        if loudness is None:
+            return None
+        write_replaygain(source, loudness)
+        return audio_quality.replaygain_db(loudness)
     except Exception:
         return None

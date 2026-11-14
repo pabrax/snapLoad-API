@@ -141,7 +141,7 @@ def test_register_track_without_origin_has_no_note(sandbox):
 
 import hashlib  # noqa: E402
 
-from app.services import audio_quality  # noqa: E402
+from app.services import audio_quality, enrichment  # noqa: E402
 from app.services.tagger import write_replaygain  # noqa: E402
 
 
@@ -221,10 +221,11 @@ def test_register_track_for_a_download_stores_replaygain(sandbox):
     folder.mkdir(parents=True)
     audio = _tone(folder / "Tone.mp3", -26, "-c:a", "libmp3lame", "-b:a", "128k")
 
-    track_id = library_service.register_track(audio, job_id="job1", fmt="mp3", analyze=True)
+    gain = enrichment.tag_loudness(audio)                  # runs BEFORE the file is moved/published
+    track_id = library_service.register_track(audio, job_id="job1", fmt="mp3")
 
-    gain = track_repo.get(track_id).replaygain_db
     assert gain is not None and gain > 0                   # quiet tone => positive gain
+    assert track_repo.get(track_id).replaygain_db == gain  # registration only READS the tag
     from mutagen.id3 import ID3
     assert any("replaygain_track_gain" in str(k).lower() for k in ID3(str(audio)).keys())
 
@@ -241,4 +242,29 @@ def test_library_files_without_a_job_are_not_modified(sandbox):
     library_service.register_track(audio)
     library_service.register_track(audio, job_id="oldjob")   # backfill path: job known, but no analysis
 
+    assert hashlib.sha256(audio.read_bytes()).hexdigest() == before
+
+
+@pytest.mark.parametrize("tags,expected", [
+    ({"replaygain_track_gain": "+8.00 dB"}, 8.0),
+    ({"replaygain_track_gain": "-3.5 dB"}, -3.5),
+    ({"r128_track_gain": "768"}, 8.0),          # +3 dB vs -23 LUFS == +8 dB vs -18 LUFS
+    ({"r128_track_gain": "-256"}, 4.0),
+    ({}, None),
+    ({"replaygain_track_gain": "junk"}, None),
+    ({"r128_track_gain": "junk"}, None),
+])
+def test_replaygain_is_read_back_from_tags(tags, expected):
+    assert audio_quality.replaygain_from_tags(tags) == expected
+
+
+@needs_ffmpeg
+def test_register_track_never_modifies_the_file(sandbox):
+    """Registration (also used inside GET /library/tracks via backfill) is read-only."""
+    from app.core.config import settings
+    folder = settings.DOWNLOAD_DIR / "audio"
+    folder.mkdir(parents=True)
+    audio = _tone(folder / "Mine.mp3", -26, "-c:a", "libmp3lame", "-b:a", "128k")
+    before = hashlib.sha256(audio.read_bytes()).hexdigest()
+    library_service.register_track(audio, job_id="job1", fmt="mp3")
     assert hashlib.sha256(audio.read_bytes()).hexdigest() == before

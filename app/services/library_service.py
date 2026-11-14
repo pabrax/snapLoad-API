@@ -8,7 +8,7 @@ from typing import Optional
 from ..core.config import settings
 from ..core.source_id import canonical_source_id
 from ..repositories import download_index_repo, track_id_for, track_repo
-from . import audio_quality, tagger, track_metadata
+from . import audio_quality, track_metadata
 
 BACKFILL_BATCH = 50
 
@@ -18,7 +18,6 @@ def register_track(
     job_id: Optional[str] = None,
     fmt: Optional[str] = None,
     kept: Optional[bool] = None,
-    analyze: bool = False,
 ) -> str:
     """
     Registra o actualiza una pista leyendo sus tags.
@@ -29,8 +28,9 @@ def register_track(
         fmt: Formato de audio (por defecto, la extensión)
         kept: Marca kept. None: una pista nueva toma `LIBRARY_AUTO_KEEP` y una existente conserva
             la elección del usuario
-        analyze: True solo para una descarga recién terminada: mide la sonoridad y escribe el tag
-            ReplayGain. El backfill (dentro de un GET) no lo usa: no modifica archivos antiguos
+
+    Registrar solo LEE el archivo (también lo usa el backfill dentro de un GET). El tag ReplayGain lo
+    escribe `enrichment.tag_loudness` sobre el archivo temporal, antes de publicarlo.
 
     Returns:
         Id de la pista
@@ -39,15 +39,10 @@ def register_track(
     if kept is None and track_repo.get(track_id_for(audio_path)) is None:
         kept = settings.LIBRARY_AUTO_KEEP
 
-    replaygain = None
-    if analyze:
-        loudness = audio_quality.measure_loudness(audio_path)
-        if loudness is not None:
-            replaygain = audio_quality.replaygain_db(loudness)
-            tagger.write_replaygain(audio_path, loudness)
-
     tags = track_metadata.read_tags(audio_path)
-    quality = audio_quality.quality_from_probe(track_metadata.probe(audio_path))
+    info = track_metadata.probe(audio_path)
+    quality = audio_quality.quality_from_probe(info)
+    replaygain = audio_quality.replaygain_from_tags(track_metadata._embedded(info) if info else {})
     sidecar = track_metadata.read_sidecar(audio_path)
     # Origen con pérdida conocido: salió de una descarga (job) o tiene sidecar de yt-dlp/spotdl
     lossy_origin = bool(job_id) or sidecar is not None

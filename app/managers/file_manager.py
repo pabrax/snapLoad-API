@@ -13,6 +13,32 @@ from ..helpers import FileNameHelper, DateTimeHelper
 from ..schemas import JobMetadata, FileInfo
 
 
+def _claim_path(path: Path) -> Path:
+    """
+    Reserva un nombre libre de forma atómica (creación exclusiva) y devuelve la ruta reservada. Evita que dos
+    descargas simultáneas elijan el mismo nombre y una pise a la otra.
+    """
+    candidate = FileNameHelper.unique_path(path)
+    counter = 1
+    while True:
+        try:
+            with open(candidate, "xb"):
+                pass
+            return candidate
+        except FileExistsError:
+            candidate = path.with_name(f"{path.stem}-{counter}{path.suffix}")
+            counter += 1
+
+
+def _move_claimed(source: Path, claimed: Path) -> None:
+    """Mueve `source` sobre el nombre reservado; si falla, libera la reserva."""
+    try:
+        shutil.move(str(source), str(claimed))
+    except OSError:
+        claimed.unlink(missing_ok=True)
+        raise
+
+
 class FileManager:
     """
     Gestor de operaciones con archivos.
@@ -71,12 +97,17 @@ class FileManager:
                         target_folder = candidate
                     except ValueError:
                         target_folder = destination_folder
-                target_folder.mkdir(parents=True, exist_ok=True)
-                dest = FileNameHelper.unique_path(target_folder / safe_name)
+                try:
+                    target_folder.mkdir(parents=True, exist_ok=True)
+                    dest = _claim_path(target_folder / safe_name)
+                    _move_claimed(file_path, dest)
+                except OSError:
+                    if target_folder == destination_folder:
+                        raise
+                    # Ruta demasiado larga o carpeta imposible: mejor plano que perder la descarga
+                    dest = _claim_path(destination_folder / FileNameHelper.sanitize_filename(file_path.name))
+                    _move_claimed(file_path, dest)
                 
-                # Mover archivo
-                shutil.move(str(file_path), str(dest))
-
                 if on_moved:
                     try:
                         on_moved(file_path, dest)

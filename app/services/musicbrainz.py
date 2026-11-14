@@ -5,6 +5,7 @@ Es una conexión externa y opcional (`MUSICBRAINZ_ENABLED`). Cumple las reglas d
 1 petición por segundo y un User-Agent identificable (nombre y versión; contacto solo si el usuario lo
 configura). Nunca lanza: sin red, con error o sin coincidencia fiable devuelve None.
 """
+import json
 import logging
 import re
 import threading
@@ -30,6 +31,21 @@ MAX_ATTEMPTS = 3               # MusicBrainz responde 503 "ocupado" a menudo: se
 RETRY_DELAY_S = 2.0
 RETRYABLE_STATUS = {429, 503}
 MAX_COVER_BYTES = 5_000_000
+MAX_JSON_BYTES = 5_000_000
+DEADLINE_S = 20.0              # tiempo total máximo de una respuesta (el timeout de httpx es por lectura)
+ALLOWED_HOSTS = {"musicbrainz.org", "coverartarchive.org", "archive.org"}
+_UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def _host_allowed(host: Optional[str]) -> bool:
+    host = (host or "").lower()
+    return host in ALLOWED_HOSTS or host.endswith(".archive.org")
+
+
+def _guard(request: httpx.Request) -> None:
+    """Hook de petición: solo https y solo MusicBrainz / Cover Art Archive / archive.org, también en redirecciones."""
+    if request.url.scheme != "https" or not _host_allowed(request.url.host):
+        raise httpx.UnsupportedProtocol(f"blocked request to {request.url.host}")
 
 
 @dataclass(frozen=True)
@@ -132,15 +148,30 @@ class MusicBrainzClient:
 
     @staticmethod
     def _user_agent() -> str:
-        contact = (settings.MUSICBRAINZ_CONTACT or "").strip()
+        contact = re.sub(r"[\x00-\x1f\x7f]", "", settings.MUSICBRAINZ_CONTACT or "").strip()
         base = f"SnapLoad/{settings.APP_VERSION}"
         return f"{base} ( {contact} )" if contact else base
 
     def _http(self) -> httpx.Client:
         return httpx.Client(
-            transport=self._transport, timeout=TIMEOUT_S, follow_redirects=True,
+            transport=self._transport, timeout=TIMEOUT_S, follow_redirects=True, event_hooks={"request": [_guard]},
             headers={"User-Agent": self._user_agent(), "Accept": "application/json"},
         )
+
+    @staticmethod
+    def _read_limited(http: httpx.Client, url: str, params: Optional[dict], max_bytes: int):
+        """GET en streaming con tope de bytes y de tiempo total. Devuelve (status, headers, cuerpo o None)."""
+        started = time.monotonic()
+        with http.stream("GET", url, params=params) as response:
+            declared = response.headers.get("content-length")
+            if declared and declared.isdigit() and int(declared) > max_bytes:
+                return response.status_code, response.headers, None
+            body = bytearray()
+            for chunk in response.iter_bytes():
+                body.extend(chunk)
+                if len(body) > max_bytes or time.monotonic() - started > DEADLINE_S:
+                    return response.status_code, response.headers, None
+            return response.status_code, response.headers, bytes(body)
 
     def _throttle(self) -> None:
         """Espera lo necesario para no pasar de 1 petición por segundo (serializa los hilos)."""
@@ -171,16 +202,19 @@ class MusicBrainzClient:
                 with self._lock:
                     self._throttle()
                     with self._http() as http:
-                        response = http.get(
-                            MB_RECORDING_URL, params={"query": query, "fmt": "json", "limit": SEARCH_LIMIT}
+                        status, _, body = self._read_limited(
+                            http, MB_RECORDING_URL,
+                            {"query": query, "fmt": "json", "limit": SEARCH_LIMIT}, MAX_JSON_BYTES,
                         )
-                if response.status_code in RETRYABLE_STATUS and attempt < MAX_ATTEMPTS:
-                    logger.info("MusicBrainz %s, retry %s/%s", response.status_code, attempt, MAX_ATTEMPTS - 1)
+                if status in RETRYABLE_STATUS and attempt < MAX_ATTEMPTS:
+                    logger.info("MusicBrainz %s, retry %s/%s", status, attempt, MAX_ATTEMPTS - 1)
                     self._sleep(RETRY_DELAY_S)
                     continue
                 break
-            response.raise_for_status()
-            recordings = response.json().get("recordings")
+            if status != 200 or body is None:
+                logger.warning("MusicBrainz lookup failed: HTTP %s", status)
+                return None
+            recordings = json.loads(body).get("recordings")
             if not isinstance(recordings, list):
                 return None
             wanted = _norm(title)
@@ -215,16 +249,17 @@ class MusicBrainzClient:
 
     def fetch_cover(self, release_id: Optional[str]) -> Optional[bytes]:
         """Descarga la portada frontal (500 px) de un release, o None si no hay o falla."""
-        if not release_id:
+        if not release_id or not _UUID.match(release_id):
             return None
         try:
             with self._http() as http:
-                response = http.get(CAA_FRONT_URL.format(release_id=release_id))
-            if response.status_code != 200:
+                status, headers, data = self._read_limited(
+                    http, CAA_FRONT_URL.format(release_id=release_id), None, MAX_COVER_BYTES
+                )
+            if status != 200 or not data:
                 return None
-            if not response.headers.get("content-type", "").startswith("image/"):
+            if not headers.get("content-type", "").startswith("image/"):
                 return None
-            data = response.content
-            return data if 0 < len(data) <= MAX_COVER_BYTES else None
+            return data
         except (httpx.HTTPError, ValueError):
             return None

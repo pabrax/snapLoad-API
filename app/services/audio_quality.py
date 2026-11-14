@@ -115,3 +115,24 @@ def measure_loudness(path: Path) -> Optional[float]:
 def replaygain_db(loudness_lufs: float) -> float:
     """Ganancia ReplayGain 2.0 (dB) para llevar la pista a -18 LUFS."""
     return round(REPLAYGAIN_REFERENCE_LUFS - loudness_lufs, 2)
+
+
+def replaygain_from_tags(tags: dict) -> Optional[float]:
+    """
+    Ganancia ReplayGain (dB, referencia -18 LUFS) leída de tags ya embebidos (claves en minúsculas), o None.
+
+    `replaygain_track_gain` ("+8.00 dB") o, en Ogg Opus, `r128_track_gain` (Q7.8 respecto a -23 LUFS;
+    +5 dB lo lleva a la referencia de ReplayGain 2.0).
+    """
+    raw = tags.get("replaygain_track_gain")
+    if raw:
+        match = re.search(r"[-+]?\d+(?:\.\d+)?", str(raw))
+        if match:
+            return round(float(match.group()), 2)
+    r128 = tags.get("r128_track_gain")
+    if r128:
+        try:
+            return round(int(str(r128).strip()) / 256 + (REPLAYGAIN_REFERENCE_LUFS - R128_REFERENCE_LUFS), 2)
+        except ValueError:
+            return None
+    return None

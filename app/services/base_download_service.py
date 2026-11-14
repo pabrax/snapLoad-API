@@ -293,7 +293,10 @@ class BaseDownloadService(ABC):
         """
         if self.get_media_type() != MediaType.AUDIO:
             return None
-        return enrichment.prepare_audio(source)
+        placement = enrichment.prepare_audio(source)
+        # Siempre sobre el archivo temporal: una vez publicado (índice en ready) nadie debe reescribirlo
+        enrichment.tag_loudness(source)
+        return placement
 
     def _process_succeeded(self, returncode: int, raw_output: str, temp_dir: Path) -> bool:
         """Indica si el proceso terminó bien; por defecto, código de salida 0."""
@@ -420,9 +423,7 @@ class BaseDownloadService(ABC):
         if self.get_media_type() == MediaType.AUDIO:
             try:
                 for file_info in moved_files:
-                    library_service.register_track(
-                        Path(file_info.path), job_id=job_id, fmt=format_, analyze=True
-                    )
+                    library_service.register_track(Path(file_info.path), job_id=job_id, fmt=format_)
             except Exception:
                 # La biblioteca se puede reconstruir (backfill): no fallar la descarga por ella
                 pass
