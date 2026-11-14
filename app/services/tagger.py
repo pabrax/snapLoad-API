@@ -57,8 +57,12 @@ def clean_title(raw: Optional[str], artist: Optional[str] = None) -> Optional[st
             break
         title = cleaned
     title = title.strip()
-    if artist and title.lower().startswith(f"{artist.strip().lower()} - "):
-        title = title[len(artist.strip()) + 3:].strip()
+    if artist:
+        name = artist.strip().lower()
+        if title.lower().startswith(f"{name} - "):
+            title = title[len(name) + 3:].strip()
+        elif title.lower().endswith(f" - {name}"):
+            title = title[: -(len(name) + 3)].strip()
     return title or original
 
 

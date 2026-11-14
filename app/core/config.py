@@ -24,6 +24,15 @@ class Settings:
     # Biblioteca: las descargas de audio nuevas quedan protegidas de la limpieza hasta que se borren
     LIBRARY_AUTO_KEEP: bool = os.getenv("LIBRARY_AUTO_KEEP", "false").lower() == "true"
 
+    # Etiquetado con MusicBrainz + Cover Art Archive (conexión externa, apagada por defecto).
+    # MUSICBRAINZ_CONTACT es opcional: si se define, se añade al User-Agent (MusicBrainz lo agradece).
+    MUSICBRAINZ_ENABLED: bool = os.getenv("MUSICBRAINZ_ENABLED", "false").lower() == "true"
+    MUSICBRAINZ_CONTACT: str = os.getenv("MUSICBRAINZ_CONTACT", "")
+
+    # Disposición de las descargas de audio NUEVAS: "flat" (como siempre) o "artist-album"
+    # (Artista/Álbum/NN - Título). Los archivos existentes no se mueven.
+    LIBRARY_LAYOUT: str = os.getenv("LIBRARY_LAYOUT", "flat").lower()
+
     # Formatos válidos
     VALID_VIDEO_FORMATS: Set[str] = {"webm", "mp4", "mkv", "mov", "avi"}
     

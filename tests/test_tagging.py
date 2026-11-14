@@ -132,6 +132,8 @@ def test_clean_artist(raw, expected):
 @pytest.mark.parametrize("raw,artist,expected", [
     ("Radiohead - Karma Police (Official Video)", "Radiohead", "Karma Police"),
     ("Karma Police [Official Audio]", "Radiohead", "Karma Police"),
+    ("Karma Police - Radiohead (Official Video)", "Radiohead", "Karma Police"),
+    ("Radiohead - Radiohead", "Radiohead", "Radiohead"),
     ("Karma Police (Lyrics)", None, "Karma Police"),
     ("Karma Police (Official Music Video) [4K]", None, "Karma Police"),
     ("Song (feat. Someone)", None, "Song (feat. Someone)"),

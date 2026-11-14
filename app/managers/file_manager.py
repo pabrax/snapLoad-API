@@ -24,7 +24,8 @@ class FileManager:
         source_folder: Path,
         destination_folder: Path,
         file_extensions: set,
-        on_moved: Optional[Callable[[Path, Path], None]] = None
+        on_moved: Optional[Callable[[Path, Path], None]] = None,
+        prepare: Optional[Callable[[Path], Any]] = None
     ) -> List[FileInfo]:
         """
         Mueve archivos de una carpeta temporal a su destino final.
@@ -35,6 +36,9 @@ class FileManager:
             file_extensions: Set de extensiones a mover
             on_moved: Callback (origen, destino) tras mover cada archivo; sus errores no
                 interrumpen la descarga
+            prepare: Callback (archivo temporal) previo al movimiento; puede devolver un objeto con
+                `subdir` (subcarpeta bajo el destino) y `name` (nombre nuevo) para colocar el archivo.
+                Sus errores no interrumpen la descarga y la ruta nunca puede salir del destino
 
         Returns:
             Lista de FileInfo con los archivos movidos
@@ -48,9 +52,27 @@ class FileManager:
         for file_path in source_folder.rglob("*"):
             if file_path.is_file() and file_path.suffix.lower() in file_extensions:
                 # Sanitizar nombre y evitar colisiones
-                safe_name = FileNameHelper.sanitize_filename(file_path.name)
-                dest = destination_folder / safe_name
-                dest = FileNameHelper.unique_path(dest)
+                placement = None
+                if prepare:
+                    try:
+                        placement = prepare(file_path)
+                    except Exception:
+                        placement = None
+
+                safe_name = FileNameHelper.sanitize_filename(
+                    (getattr(placement, "name", None) or file_path.name)
+                )
+                target_folder = destination_folder
+                subdir = getattr(placement, "subdir", None)
+                if subdir:
+                    candidate = destination_folder / subdir
+                    try:
+                        candidate.resolve().relative_to(destination_folder.resolve())
+                        target_folder = candidate
+                    except ValueError:
+                        target_folder = destination_folder
+                target_folder.mkdir(parents=True, exist_ok=True)
+                dest = FileNameHelper.unique_path(target_folder / safe_name)
                 
                 # Mover archivo
                 shutil.move(str(file_path), str(dest))

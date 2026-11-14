@@ -15,7 +15,7 @@ from ..schemas import JobMetadata, FileInfo
 from ..managers import job_manager, file_manager, metadata_manager
 from ..helpers import DateTimeHelper, TextHelper
 from ..repositories import download_index_repo, media_repo
-from . import library_service
+from . import enrichment, library_service
 
 
 class BaseDownloadService(ABC):
@@ -282,8 +282,18 @@ class BaseDownloadService(ABC):
     def _move_files(self, temp_dir: Path, download_dir: Path) -> List[FileInfo]:
         """Mueve los archivos desde el directorio temporal al final."""
         return self.file_manager.move_files_to_destination(
-            temp_dir, download_dir, self.get_file_extensions(), on_moved=self._after_move
+            temp_dir, download_dir, self.get_file_extensions(),
+            on_moved=self._after_move, prepare=self._prepare_file,
         )
+
+    def _prepare_file(self, source: Path):
+        """
+        Gancho previo al movimiento de cada archivo. En audio, etiqueta con MusicBrainz y/o decide la
+        carpeta Artista/Álbum según los ajustes (apagados por defecto); en video no hace nada.
+        """
+        if self.get_media_type() != MediaType.AUDIO:
+            return None
+        return enrichment.prepare_audio(source)
 
     def _process_succeeded(self, returncode: int, raw_output: str, temp_dir: Path) -> bool:
         """Indica si el proceso terminó bien; por defecto, código de salida 0."""
